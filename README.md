@@ -7,6 +7,8 @@ forward pass, with no text generation.
 It is a small, independent, open reproduction of the idea behind decision models such as Jev
 (TypeSafe AI). It is **not affiliated with or derived from** that product.
 
+**Trained model (LoRA adapters + answer head):** <https://huggingface.co/AstitwaAgarwal/multimodal-jev>
+
 ```
 image + context + question + options ──► Qwen3-VL-2B (prefill only, LoRA-tuned) ──► hidden states
                                                                                     │
@@ -164,7 +166,14 @@ not trained at scale.
 
 ## Notes
 
-- Trained weights are not part of this repository. Rebuild them with the steps above (about 1.5 hours
-  end to end on an 8 GB laptop GPU, most of it teacher generation).
+- Trained weights are not part of this repository. Download them from
+  [Hugging Face](https://huggingface.co/AstitwaAgarwal/multimodal-jev)
+  (`huggingface_hub.snapshot_download("AstitwaAgarwal/multimodal-jev")`) and pass that folder to
+  `JevRunner`, or rebuild them with the steps above (about 1.5 hours end to end on an 8 GB laptop GPU,
+  most of it teacher generation).
 - ScienceQA data and the Food-101 photos are not redistributed; the scripts download them.
 - The teacher model's outputs are used as training text. Check the model's licence for your use.
+
+## Licence
+
+Apache-2.0, see [LICENSE](LICENSE). The base model `Qwen/Qwen3-VL-2B-Instruct` is also Apache-2.0.
