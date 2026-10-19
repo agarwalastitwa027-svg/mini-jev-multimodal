@@ -43,7 +43,44 @@ def di_summary(path):
             if isinstance(idx, dict) else {}}
 
 
-def model_card(meta, mix, results_dir, cal, di_text, di_vision, repo, lora):
+TEST_NAMES = {"test_text.jsonl": "Text, sources seen in training",
+              "test_vision.jsonl": "Images, sources seen in training",
+              "test_zeroshot.jsonl": "Zero-shot (sources never trained on)",
+              "bench_scienceqa.jsonl": "ScienceQA test images (zero-shot)"}
+
+
+def pct(x):
+    return f"{100 * x:.1f}" if isinstance(x, (int, float)) else "–"
+
+
+def calibration_table(cal):
+    """Accuracy + calibration rows from calibration.json (validation and every test file)."""
+    if not cal or not cal.get("test"):
+        return []
+    rows = [("Validation", cal.get("val", {}))] + [(TEST_NAMES.get(f, f), d) for f, d in cal["test"].items()]
+    out = ["### Accuracy and calibration", "",
+           "Per-type temperatures fitted on validation data. ECE is shown before → after calibration. "
+           "Acc@conf≥0.9 is the accuracy on questions answered with confidence ≥ 0.9 (coverage = their share). "
+           "Acc, Skill and coverage in %; Skill = (acc − chance) / (1 − chance).", "",
+           "| Test set | Group | n | Acc | Skill | ECE | NLL | Acc@conf≥0.9 (coverage) |",
+           "|---|---|---|---|---|---|---|---|"]
+    for name, d in rows:
+        before, after = d.get("before", {}), d.get("after", {})
+        groups = [g for g in ("modality:text", "modality:vision") if g in after]
+        for g in (["all"] if len(groups) < 2 else ["all"] + groups):
+            a, b = after.get(g), before.get(g, {})
+            if not a:
+                continue
+            label = "all" if g == "all" else g.split(":")[1]
+            if g == "all" and len(groups) == 1:
+                label = groups[0].split(":")[1]
+            out.append(f"| {name} | {label} | {a.get('n')} | {pct(a.get('accuracy'))} | {pct(a.get('skill'))} | "
+                       f"{b.get('ece', 0):.3f} → {a.get('ece', 0):.3f} | {a.get('nll', 0):.3f} | "
+                       f"{pct(a.get('sel_acc@0.9'))} ({pct(a.get('coverage@0.9'))}) |")
+    return out + [""]
+
+
+def model_card(meta, mix, results_dir, cal, di_text, di_vision, repo, lora, decontam=None):
     base = meta.get("base_model", "Qwen/Qwen3-VL-2B-Instruct")
     ta = meta.get("train_args", {})
     sources = sorted({s.split(" (")[0] for s in (mix or {}).get("by_source", {})})
@@ -98,9 +135,11 @@ def model_card(meta, mix, results_dir, cal, di_text, di_vision, repo, lora):
         q = mix.get("questions_by_modality", {}).get("train", {})
         lines += [f"- Data: {mix['questions'].get('train', '?')} training questions "
                   f"({q.get('text', 0)} text, {q.get('vision', 0)} image) from: {', '.join(sources)}.",
-                  "- **Decontamination:** no split of any Jev Decision Index benchmark is used for training, and "
-                  "training rows overlapping the Decision Index suites (13-gram text overlap, exact image hash) "
-                  "were removed.", ""]
+                  "- **Decontamination:** no split of any Jev Decision Index benchmark is used for training"
+                  + (f"; training rows overlapping the Decision Index suites (13-gram text overlap, exact image "
+                     f"hash) were removed ({decontam.get('total', 0) - decontam.get('kept', 0)} of "
+                     f"{decontam.get('total', 0)} rows)." if decontam else
+                     "; the overlap check against the downloaded Decision Index suites has not been run yet."), ""]
     lines += ["## Results", ""]
     if di_text or di_vision:
         lines += ["### Jev Decision Index", "", "| Board | Score | Edition | Complete |", "|---|---|---|---|"]
@@ -110,6 +149,7 @@ def model_card(meta, mix, results_dir, cal, di_text, di_vision, repo, lora):
                 lines.append(f"| {name} | {v:.2f} | {d.get('edition') or '–'} | {d.get('complete')} |" if isinstance(v, (int, float))
                              else f"| {name} | – | {d.get('edition') or '–'} | {d.get('complete')} |")
         lines.append("")
+    lines += calibration_table(cal)
     if abl:
         lines += [abl.replace("# Ablations", "### Comparisons (own test sets)"), ""]
     if lat:
@@ -167,9 +207,10 @@ def main():
     mix = read(a.mix_report)
     if mix:
         shutil.copy2(a.mix_report, os.path.join(a.staging, "mix_report.json"))
+    decontam = read(os.path.join(os.path.dirname(a.mix_report), "train_decontam.json"))
     card = model_card(meta, mix, a.results, read(os.path.join(a.run, "calibration.json")),
                       di_summary(a.di_text_scores) if a.di_text_scores else None,
-                      di_summary(a.di_vision_scores) if a.di_vision_scores else None, a.repo, lora)
+                      di_summary(a.di_vision_scores) if a.di_vision_scores else None, a.repo, lora, decontam)
     open(os.path.join(a.staging, "README.md"), "w", encoding="utf-8").write(card)
     print(f"staged {a.staging}: {sorted(os.listdir(a.staging))}")
     if a.dry_run:
