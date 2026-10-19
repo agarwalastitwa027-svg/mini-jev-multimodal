@@ -1,0 +1,136 @@
+{
+ "run": "runs/v2_seed0",
+ "device": "NVIDIA GeForce RTX 5070 Laptop GPU",
+ "dtype": "torch.bfloat16",
+ "results": [
+  {
+   "case": "text 100 tok",
+   "questions": 1,
+   "cached": {
+    "p50_ms": 43.404293000094185,
+    "p95_ms": 55.037377000189736,
+    "input_tokens": 137,
+    "prefix_tokens": 98
+   },
+   "uncached": {
+    "p50_ms": 43.819748500027345,
+    "p95_ms": 47.51759899954777,
+    "input_tokens": 137,
+    "prefix_tokens": 98
+   }
+  },
+  {
+   "case": "text 100 tok",
+   "questions": 8,
+   "cached": {
+    "p50_ms": 108.12039200027357,
+    "p95_ms": 131.4493779991608,
+    "input_tokens": 354,
+    "prefix_tokens": 98
+   },
+   "uncached": {
+    "p50_ms": 325.06803199976275,
+    "p95_ms": 333.1089829989651,
+    "input_tokens": 354,
+    "prefix_tokens": 98
+   }
+  },
+  {
+   "case": "text 1000 tok",
+   "questions": 1,
+   "cached": {
+    "p50_ms": 147.21683399966423,
+    "p95_ms": 149.75362699988182,
+    "input_tokens": 873,
+    "prefix_tokens": 834
+   },
+   "uncached": {
+    "p50_ms": 147.28754049974668,
+    "p95_ms": 148.6007960011193,
+    "input_tokens": 873,
+    "prefix_tokens": 834
+   }
+  },
+  {
+   "case": "text 1000 tok",
+   "questions": 8,
+   "cached": {
+    "p50_ms": 254.4298244993115,
+    "p95_ms": 257.5241249996907,
+    "input_tokens": 1090,
+    "prefix_tokens": 834
+   },
+   "uncached": {
+    "p50_ms": 1176.0546594996413,
+    "p95_ms": 1178.4985859994777,
+    "input_tokens": 1090,
+    "prefix_tokens": 834
+   }
+  },
+  {
+   "case": "text 4000 tok",
+   "questions": 1,
+   "cached": {
+    "p50_ms": 596.3089174993002,
+    "p95_ms": 599.7733490003156,
+    "input_tokens": 3273,
+    "prefix_tokens": 3234
+   },
+   "uncached": {
+    "p50_ms": 594.2456020002282,
+    "p95_ms": 597.4004929994408,
+    "input_tokens": 3273,
+    "prefix_tokens": 3234
+   }
+  },
+  {
+   "case": "text 4000 tok",
+   "questions": 8,
+   "cached": {
+    "p50_ms": 1197.4907370004075,
+    "p95_ms": 1209.7609890006424,
+    "input_tokens": 3490,
+    "prefix_tokens": 3234
+   },
+   "uncached": {
+    "p50_ms": 4706.511989500541,
+    "p95_ms": 4724.691593999523,
+    "input_tokens": 3490,
+    "prefix_tokens": 3234
+   }
+  },
+  {
+   "case": "image + 100 tok",
+   "questions": 1,
+   "cached": {
+    "p50_ms": 332.51382149956044,
+    "p95_ms": 422.28777699892817,
+    "input_tokens": 844,
+    "prefix_tokens": 805
+   },
+   "uncached": {
+    "p50_ms": 339.56100850082294,
+    "p95_ms": 350.34652600006666,
+    "input_tokens": 844,
+    "prefix_tokens": 805
+   }
+  },
+  {
+   "case": "image + 100 tok",
+   "questions": 8,
+   "cached": {
+    "p50_ms": 439.6262865002427,
+    "p95_ms": 445.566554000834,
+    "input_tokens": 1061,
+    "prefix_tokens": 805
+   },
+   "uncached": {
+    "p50_ms": 2647.36203350094,
+    "p95_ms": 2655.5850860004284,
+    "input_tokens": 1061,
+    "prefix_tokens": 805
+   }
+  }
+ ],
+ "peak_vram_gb": 7.43
+}
