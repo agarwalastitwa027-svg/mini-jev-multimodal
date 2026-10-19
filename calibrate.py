@@ -1,150 +1,105 @@
-"""Calibrate (temperature scaling) and evaluate a trained mini-Jev run.
+"""Fit one temperature per question type on validation data, then evaluate test files.
 
-    python calibrate.py --run runs/qwen3-1.7b --val data/val.jsonl \
-        --test data/test.jsonl data/test_zeroshot.jsonl data/synthetic_test.jsonl
+    python calibrate.py --run runs/v2_seed0 --val data/v2/val.jsonl \
+        --test data/v2/test_text.jsonl data/v2/test_vision.jsonl data/v2/test_zeroshot.jsonl
 
-Reports, per test file, before and after calibration:
-    accuracy | NLL | Brier | ECE (15 bins) | selective accuracy at confidence thresholds
-and writes a reliability diagram PNG into the run folder.
+Writes into the run folder:
+    head_calibrated.pt   the answer head with fitted temperatures (loaded automatically afterwards)
+    calibration.json     temperatures + metrics before/after for every test file
+    reliability.png      reliability diagram (if matplotlib is installed)
 """
 import argparse
 import json
+import math
 import os
 
 import torch
-import torch.nn.functional as F
 
-from jev.format import collate, encode_example
-from jev.model import MiniJev, load_tokenizer, load_vision, pick_dtype
-
-
-@torch.no_grad()
-def raw_logits(model, tok, rows, bs, max_ctx, device, dtype, vision=None):
-    out, ys = [], []
-    for i in range(0, len(rows), bs):
-        batch = [encode_example(tok, ex, max_ctx, vision) for ex in rows[i:i + bs]]
-        b = collate(batch, tok.pad_token_id)
-        with torch.autocast(device.type, dtype=dtype, enabled=device.type == "cuda"):
-            lg = model.run(b, device)
-        out += [l.float().cpu() for l in lg]
-        ys += b["labels"].tolist()
-    return out, ys
+from eval.evaluate import collect, report, rescale
+from jev.data import read_jsonl
+from jev.schema import TYPES, TYPE_INDEX
 
 
-def fit_temperature(logits, ys):
-    log_t = torch.zeros(1, requires_grad=True)
-    opt = torch.optim.LBFGS([log_t], lr=0.1, max_iter=200)
+def fit_temperature(pairs, min_n=1):
+    """pairs: (probs, gold). Minimise NLL of softmax(log p / T) over T > 0 (grid + golden section)."""
+    pairs = [(p, y) for p, y in pairs if p is not None]
+    if len(pairs) < min_n:
+        return 1.0
 
-    def closure():
-        opt.zero_grad()
-        t = log_t.exp()
-        loss = sum(F.cross_entropy((l / t)[None], torch.tensor([y])) for l, y in zip(logits, ys)) / len(ys)
-        loss.backward()
-        return loss
-    opt.step(closure)
-    return float(log_t.exp())
-
-
-def metrics(logits, ys, T=1.0, bins=15):
-    conf, correct, nll, brier = [], [], 0.0, 0.0
-    for l, y in zip(logits, ys):
-        p = F.softmax(l / T, -1)
-        c, k = p.max(0)
-        conf.append(float(c))
-        correct.append(int(k) == y)
-        nll -= float(torch.log(p[y] + 1e-12))
-        onehot = torch.zeros_like(p)
-        onehot[y] = 1
-        brier += float(((p - onehot) ** 2).sum())
-    n = len(ys)
-    ece, rel = 0.0, []
-    for i in range(bins):
-        lo, hi = i / bins, (i + 1) / bins
-        idx = [j for j in range(n) if lo < conf[j] <= hi]
-        if idx:
-            acc = sum(correct[j] for j in idx) / len(idx)
-            avg = sum(conf[j] for j in idx) / len(idx)
-            ece += len(idx) / n * abs(acc - avg)
-            rel.append((avg, acc, len(idx)))
-    selective = {}
-    for th in [0.5, 0.7, 0.8, 0.9, 0.95]:
-        idx = [j for j in range(n) if conf[j] >= th]
-        selective[th] = (len(idx) / n, (sum(correct[j] for j in idx) / len(idx)) if idx else None)
-    return {"acc": sum(correct) / n, "nll": nll / n, "brier": brier / n, "ece": ece,
-            "selective": selective, "reliability": rel, "n": n}
-
-
-def plot(results, path):
-    try:
-        import matplotlib
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-    except ImportError:
-        return
-    fig, ax = plt.subplots(figsize=(5, 5))
-    ax.plot([0, 1], [0, 1], "--", color="gray", label="perfect calibration")
-    for name, m in results.items():
-        xs = [r[0] for r in m["reliability"]]
-        ys = [r[1] for r in m["reliability"]]
-        ax.plot(xs, ys, "o-", label=f"{name} (ECE {m['ece']:.3f})")
-    ax.set_xlabel("stated confidence")
-    ax.set_ylabel("actual accuracy")
-    ax.legend(fontsize=8)
-    fig.tight_layout()
-    fig.savefig(path, dpi=150)
+    def nll(T):
+        return -sum(math.log(max(rescale(p, T)[y], 1e-12)) for p, y in pairs) / len(pairs)
+    grid = [0.05 * 1.15 ** i for i in range(42)]  # 0.05 .. ~16
+    best = min(grid, key=nll)
+    lo, hi = best / 1.15, best * 1.15
+    g = (math.sqrt(5) - 1) / 2
+    for _ in range(40):
+        a, b = hi - g * (hi - lo), lo + g * (hi - lo)
+        if nll(a) < nll(b):
+            hi = b
+        else:
+            lo = a
+    return (lo + hi) / 2
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--run", required=True)
     ap.add_argument("--val", nargs="+", required=True)
-    ap.add_argument("--test", nargs="+", required=True)
-    ap.add_argument("--bs", type=int, default=16)
-    ap.add_argument("--max-ctx", type=int, default=384)
-    ap.add_argument("--limit", type=int, default=2000)
+    ap.add_argument("--test", nargs="*", default=[])
+    ap.add_argument("--val-limit", type=int, default=3000)
+    ap.add_argument("--test-limit", type=int, default=None)
+    ap.add_argument("--min-per-type", type=int, default=50,
+                    help="types with fewer validation questions share the pooled temperature")
+    ap.add_argument("--image-root", default=".")
     a = ap.parse_args()
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    dtype = pick_dtype()
-    tok = load_tokenizer(a.run)
-    model = MiniJev.load(a.run, device=device)
-    vision = load_vision(a.run)
-    model.head.temperature.fill_(1.0)
+    from eval.predictors import MiniJevPredictor
+    pred = MiniJevPredictor(a.run, image_root=a.image_root)
+    pred.d.model.head.temperature.fill_(1.0)  # raw probabilities while fitting
 
-    def load(paths):
-        rows = []
-        for p in paths:
-            rows += [json.loads(l) for l in open(p, encoding="utf-8") if l.strip()]
-        return rows[: a.limit]
+    recs = collect(pred, read_jsonl(a.val, a.val_limit))
+    pooled = fit_temperature([(r["probs"], r["gold"]) for r in recs])
+    temps = {}
+    for t in TYPES:
+        pairs = [(r["probs"], r["gold"]) for r in recs if r["type"] == t and r["probs"] is not None]
+        temps[t] = fit_temperature(pairs) if len(pairs) >= a.min_per_type else pooled
+    print("temperatures:", {k: round(v, 3) for k, v in temps.items()}, "| pooled", round(pooled, 3))
 
-    vl, vy = raw_logits(model, tok, load(a.val), a.bs, a.max_ctx, device, dtype, vision)
-    T = fit_temperature(vl, vy)
-    print(f"fitted temperature T = {T:.3f}")
+    head = pred.d.model.head
+    for t, v in temps.items():
+        head.temperature[TYPE_INDEX[t]] = v
+    torch.save({k: v.cpu() for k, v in head.state_dict().items()}, os.path.join(a.run, "head_calibrated.pt"))
 
-    report, plots = {"temperature": T}, {}
-    for p in a.test:
-        if not os.path.exists(p):
-            print(f"[skip] {p} not found")
-            continue
-        lg, ys = raw_logits(model, tok, load([p]), a.bs, a.max_ctx, device, dtype, vision)
-        before, after = metrics(lg, ys, 1.0), metrics(lg, ys, T)
-        name = os.path.basename(p)
-        print(f"\n{name} (n={before['n']})")
-        print(f"  {'':10} {'acc':>7} {'nll':>7} {'brier':>7} {'ECE':>7}")
-        for tag, m in [("raw", before), ("calibrated", after)]:
-            print(f"  {tag:10} {m['acc']:7.4f} {m['nll']:7.4f} {m['brier']:7.4f} {m['ece']:7.4f}")
-        print("  selective accuracy (calibrated): threshold -> coverage, accuracy")
-        for th, (cov, acc) in after["selective"].items():
-            print(f"    >= {th:.2f}: {cov:6.1%} of items, acc {acc if acc is None else round(acc, 4)}")
-        report[name] = {"raw": before, "calibrated": after}
-        plots[name] = after
+    out = {"temperatures": temps, "pooled": pooled, "val": {"before": report(recs), "after": report(recs, temps)},
+           "test": {}}
+    for f in a.test:
+        head.temperature.fill_(1.0)
+        trecs = collect(pred, read_jsonl(f, a.test_limit))
+        before, after = report(trecs), report(trecs, temps)
+        out["test"][os.path.basename(f)] = {"before": before, "after": after}
+        b, c = before["all"], after["all"]
+        print(f"{os.path.basename(f)}: acc {c['accuracy']:.4f} | ECE {b['ece']:.4f} -> {c['ece']:.4f} | "
+              f"NLL {b['nll']:.4f} -> {c['nll']:.4f} | Brier {b['brier']:.4f} -> {c['brier']:.4f} | "
+              f"sel_acc@0.9 {c['sel_acc@0.9']} (coverage {c['coverage@0.9']:.2f})")
+    json.dump(out, open(os.path.join(a.run, "calibration.json"), "w"), indent=1)
 
-    model.head.temperature.fill_(T)
-    torch.save(model.head.state_dict(), os.path.join(a.run, "head_calibrated.pt"))
-    with open(os.path.join(a.run, "eval_report.json"), "w") as f:
-        json.dump(report, f, indent=1, default=str)
-    plot(plots, os.path.join(a.run, "reliability.png"))
-    print(f"\nsaved temperature into {a.run}/head_calibrated.pt (head.pt left untouched), report -> eval_report.json, plot -> reliability.png")
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        fig, ax = plt.subplots(figsize=(4, 4))
+        ax.plot([0, 1], [0, 1], "--", color="gray", lw=1)
+        for name, d in [("val", out["val"]["after"])] + [(k, v["after"]) for k, v in out["test"].items()]:
+            bins = d["_reliability"]
+            ax.plot([x["confidence"] for x in bins], [x["accuracy"] for x in bins], "o-", label=name, ms=3)
+        ax.set_xlabel("confidence")
+        ax.set_ylabel("accuracy")
+        ax.legend(fontsize=6)
+        fig.tight_layout()
+        fig.savefig(os.path.join(a.run, "reliability.png"), dpi=150)
+    except ImportError:
+        pass
+    print(f"wrote {a.run}/head_calibrated.pt and calibration.json")
 
 
 if __name__ == "__main__":

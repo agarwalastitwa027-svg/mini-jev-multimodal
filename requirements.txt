@@ -1,15 +1,20 @@
-# Install PyTorch FIRST with a CUDA 12.8+ build (needed for RTX 50-series / Blackwell):
+# Install PyTorch FIRST with a CUDA 12.8+ build (needed for RTX 50-series / Blackwell GPUs):
 #   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
 torch
-torchvision          # required by the Qwen3-VL image/video processor
-transformers>=4.56
-peft>=0.13
+torchvision          # used by the Qwen3-VL image processor
+transformers>=5.20,<6  # tested with 5.20 (Qwen3-VL, cache API)
+peft>=0.21
 accelerate
+huggingface_hub>=0.25
 datasets>=3.0
 tokenizers
 pillow
 requests
 numpy
 matplotlib
-# optional, only for --load-4bit (untested with images):
+fastapi              # serve.py
+uvicorn
+pytest               # tests/
+httpx
+# optional, only for --load-4bit:
 # bitsandbytes>=0.45

@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mini-jev-multimodal"
+version = "2.0.0"
+description = "Open text + image System One decision model: typed questions in, calibrated option probabilities out"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.10"
+dependencies = [
+  "torch>=2.4",
+  "torchvision",
+  "transformers>=5.20,<6",
+  "peft>=0.21",
+  "accelerate",
+  "huggingface_hub>=0.25",
+  "pillow",
+  "numpy",
+]
+
+[project.optional-dependencies]
+data = ["datasets>=3.0", "requests"]
+serve = ["fastapi", "uvicorn"]
+eval = ["matplotlib", "requests"]
+dev = ["pytest", "fastapi", "uvicorn", "httpx"]
+
+[project.urls]
+Repository = "https://github.com/agarwalastitwa027-svg/mini-jev-multimodal"
+Model = "https://huggingface.co/AstitwaAgarwal/multimodal-jev"
+
+[tool.setuptools]
+packages = ["jev"]
+py-modules = ["di_engine"]

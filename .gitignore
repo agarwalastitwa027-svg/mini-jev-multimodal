@@ -13,3 +13,8 @@ data/*.jsonl
 data/*.json
 data/*.log
 !data/synthetic/
+data/v2/
+results/raw/
+results/latency_probe.png
+*.egg-info/
+.pytest_cache/

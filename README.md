@@ -1,179 +1,139 @@
 # mini-jev-multimodal
 
-A small image + text **decision model** that runs on an 8 GB laptop GPU. You give it an image (optional),
-some text, a question and a list of allowed options. It returns one probability per option from a single
-forward pass, with no text generation.
+A small **text + image decision model** that trains and runs on an 8 GB laptop GPU. Give it a state
+(text or JSON, and up to 8 images) and typed questions; it returns a probability for every allowed
+option of every question from one forward pass, with no text generation.
 
-It is a small, independent, open reproduction of the idea behind decision models such as Jev
+An independent, open reproduction of the idea behind System One decision models such as Jev
 (TypeSafe AI). It is **not affiliated with or derived from** that product.
 
-**Trained model (LoRA adapters + answer head):** <https://huggingface.co/AstitwaAgarwal/multimodal-jev>
+**Model:** <https://huggingface.co/AstitwaAgarwal/multimodal-jev> (v2 on `main`, v1 on the `v1` branch)
 
 ```
-image + context + question + options ──► Qwen3-VL-2B (prefill only, LoRA-tuned) ──► hidden states
-                                                                                    │
-            q   = W_q · h[last token]          (has read image, context, question and every option)
-            o_j = W_o · mean(h[option j])      (one vector per option)
-            p_j = softmax_j( q·o_j / √d / T )  ← T = temperature fitted by calibration
+images + state ──► Qwen3-VL-2B (prefill only, LoRA-tuned, LM head removed) ──► KV cache   ← state encoded once
+for each question:  "Question / Options / Answer:" ──► hidden states (batched over questions)
+        q   = W_q · h[last token]          o_j = W_o · mean(h[option j])
+        p_j = softmax_j( q·o_j / √d / T[type] )      T fitted per type: choice / noul / score
 ```
 
-The LM head is removed, so the model cannot answer outside the options. Yes/no questions are options
-`["yes","no"]` and 1–5 scores are options `["1".."5"]`, so one head covers choice, bool and score.
+## What's new in v2
 
-## What it can and cannot do
-
-**Can**
-- Pick one of several options for an image plus text, and give a probability for each option.
-- Answer yes/no questions and 1–5 ratings the same way.
-- Return calibrated confidence: in testing, high-confidence answers were more often correct.
-- Run fast: about 86 ms per question on an RTX 5070 Laptop (batch size 1), about 13x faster than the 9B
-  Ollama model it was compared against.
-- Run text-only (no image), because the text path is unchanged.
-
-**Cannot**
-- Write free text, captions or explanations, or answer outside the options you supply.
-- Handle audio or video. Image + text only.
-- Be treated as a general vision model. It was trained on synthetic charts and shapes plus 10 food
-  classes. Its ScienceQA score comes mostly from the pretrained Qwen3-VL-2B backbone.
-- Match a 9B generative model on accuracy (see results).
-- Share the image encoding across questions yet: `decide()` batches questions, but each one re-reads the
-  image. True shared-prefix parallelism is not built.
-- Train in 4-bit with images: `--load-4bit` is untested for the vision model.
-
-## Results
-
-Measured on an RTX 5070 Laptop (8 GB), bf16, 4.8 GB peak training memory. 244 optimizer steps, about
-16 minutes.
-
-| Test set | n | Accuracy |
+| | v1 | v2 |
 |---|---|---|
-| Held-out procedural images (charts, shapes) | 164 | 90.2% |
-| Food-101 dishes never seen in training (4 options, chance 25%) | 120 | 96.7% |
-| ScienceQA image questions, zero-shot (chance 36.1%) | 300 | 81.3% |
+| Inputs | 1 image + text | text-only or 0–8 images + text, JSON states |
+| Questions | each question re-read the image and text | state encoded **once**, questions answered against its KV cache (exactly equal, tested) |
+| Types | choice; yes/no and 1–5 as plain choices | `choice`, `noul` (P(yes)), `score` (probabilities + expected value) |
+| Loss | hard cross-entropy | soft targets + ranked probability score for ordinal questions |
+| Calibration | one temperature | one temperature per question type |
+| Long inputs | cut to 384 tokens | never truncated; over the declared limit → `Unsupported` |
+| Data | synthetic charts, Food-101, (text incl. BANKING77/CLINC) | balanced text + image mix, **no Decision Index benchmark in training**, decontaminated |
+| Evaluation | accuracy vs a 9B teacher | base zero-shot, head-only, v1 recipe, modality ablations, generative baselines; 3 seeds; calibration + latency |
+| Serving | Python only | Jev-compatible `POST /v1/systemone` server and a Decision Index engine |
 
-Against the Ollama teacher `qwen3.5:9b-q4_K_M` on the same questions:
-
-| Test | mini-Jev (2B) | Teacher (9B) |
-|---|---|---|
-| Mixed test items, n=60 (accuracy / median latency) | 88.3% / 86 ms | 98.3% / 1132 ms |
-| ScienceQA, n=300 (accuracy) | 81.3% | 95.7% |
-
-Calibration (ScienceQA): ECE 0.087; the 48% of questions answered with confidence ≥ 0.9 were 92.3%
-correct. Temperature scaling helped log-loss on held-out procedural images (0.52 → 0.34) but not on every
-set. These are small test sets from a single run and seed, so treat the numbers as indicative.
-
-## How it was built
-
-1. **Images with exact labels.** `data/make_images.py` draws bar, pie and line charts and shape scenes;
-   the answer is computed by the drawing code. `data/make_public_mm.py` takes Food-101 photos, with some
-   dish classes held out for a zero-shot test.
-2. **Ollama vision teacher.** `data/make_synthetic_mm.py` rewords questions and writes accompanying text.
-   A rewording is kept only if a text-only judge says it asks the same thing, a blind answer on the image
-   still matches the exact label, and the text does not leak the answer. Labels are never taken from the
-   teacher.
-3. **Train.** LoRA (r=16) on the Qwen3-VL-2B text layers plus a new answer head; vision tower frozen.
-4. **Calibrate and evaluate.** Temperature scaling, ECE / Brier / selective accuracy, ScienceQA, and a
-   latency comparison with the teacher.
-
-## Setup
+## Quick start
 
 ```bash
-python -m venv .venv && source .venv/bin/activate      # Windows: .venv\Scripts\activate
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128   # RTX 50-series needs CUDA 12.8+
 pip install -r requirements.txt
+python infer.py --run AstitwaAgarwal/multimodal-jev
 ```
-
-The first run downloads `Qwen/Qwen3-VL-2B-Instruct` (about 4 GB) from Hugging Face. To rebuild the data
-you also need [Ollama](https://ollama.com) and a vision model: `ollama pull qwen3.5:9b-q4_K_M`
-(any Ollama vision model works with `--model`).
-
-## Reproduce
-
-```bash
-# 1. images + labelled questions (deterministic for a given --seed)
-python data/make_images.py --n 500 --seed 1 --out data/mm_procedural.jsonl --img-dir data/images/proc
-python data/make_public_mm.py                       # Food-101: seen classes + zero-shot classes
-
-# 2. teacher-enriched version of the procedural questions (about 1 h on an 8 GB GPU)
-python data/make_synthetic_mm.py enrich --in data/mm_procedural.jsonl --out data/mm_enriched.jsonl --enrich-frac 0.4
-#    or skip step 2: data/synthetic/mm_enriched.jsonl is included; run step 1 first so its images exist
-
-# 3. split by image, then train
-python data/split.py data/mm_enriched.jsonl --val 0.1 --test 0.15
-python data/split.py data/mm_food_train.jsonl --val 0.1 --test 0.1
-python train.py --model Qwen/Qwen3-VL-2B-Instruct \
-    --train data/mm_enriched_train.jsonl data/mm_food_train_train.jsonl \
-    --val data/mm_enriched_val.jsonl data/mm_food_train_val.jsonl \
-    --out runs/mm_v1 --epochs 4 --bs 4 --grad-accum 4 --eval-bs 8 --eval-every 20 --lr 2e-4
-
-# 4. calibrate + evaluate
-python calibrate.py --run runs/mm_v1 --val data/mm_enriched_val.jsonl data/mm_food_train_val.jsonl \
-    --test data/mm_enriched_test.jsonl data/mm_food_train_test.jsonl data/mm_food_zeroshot.jsonl --bs 8
-
-# 5. public benchmark (zero-shot)
-python data/make_benchmark_mm.py --n 300 --out data/bench_scienceqa.jsonl
-python calibrate.py --run runs/mm_v1 --val data/mm_enriched_val.jsonl --test data/bench_scienceqa.jsonl --bs 4
-
-# 6. compare with an Ollama model (run each half separately, they compete for VRAM)
-python bench_vs_ollama.py --run runs/mm_v1 --test data/bench_scienceqa.jsonl --n 300 --skip-ollama
-python bench_vs_ollama.py --test data/bench_scienceqa.jsonl --n 300 --skip-jev
-```
-
-`data/synthetic/mm_enriched.jsonl` regenerates exactly from `--seed 1`: all 1,076 labels matched when
-checked.
-
-## Use a trained model
 
 ```python
-from infer import JevRunner
-
-jev = JevRunner("runs/mm_v1")          # a folder containing lora/, head*.pt, meta.json, tokenizer files
+from jev.decide import Decider
+jev = Decider.from_pretrained("AstitwaAgarwal/multimodal-jev")
 out = jev.decide(
-    "",                                  # text context; may be empty when you pass an image
-    {"top": ["Apples", "Pears", "Grapes"], "any_pears": bool, "quality": (1, 5)},
-    {"top": "Which category has the highest value?",
-     "any_pears": "Is there a Pears bar?",
-     "quality": "How readable is this chart, from 1 (poor) to 5 (excellent)?"},
-    image="chart.png",
+    state="My package arrived damaged and I want a refund.",
+    questions={
+        "queue":  {"type": "choice", "instructions": "Which queue?",
+                   "criteria": {"billing": "payments, refunds", "shipping": "deliveries"}},
+        "urgent": {"type": "noul", "instructions": "Is this urgent?"},
+        "stars":  {"type": "score", "instructions": "How satisfied is the customer?",
+                   "criteria": {"1": "very unhappy", "2": "", "3": "", "4": "", "5": "very happy"}},
+    },
+    images=["photo.jpg"],      # optional
 )
-print(out["top"])   # {'answer': 'Apples', 'confidence': 0.99, 'probs': {...}}
+# out["answers"]["queue"]  -> {"type": "choice", "choice": "shipping", "probabilities": {...}}
+# out["answers"]["urgent"] -> {"type": "noul", "noul": 0.71}
+# out["answers"]["stars"]  -> {"type": "score", "choice": "1", "score": 1.4, "probabilities": {...}}
 ```
 
-All questions about one image go through the GPU as one batch. Text-only use is the same call without
-`image=`.
+Server: `python serve.py --run AstitwaAgarwal/multimodal-jev --port 8000`, then `POST /v1/systemone`
+with `{"model", "state", "questions", "images"?}`.
 
-## Files
+## Train and evaluate on your laptop
+
+Tested target: Samsung Galaxy Book6 Ultra, NVIDIA GeForce RTX 5070 Laptop GPU (8 GB GDDR7, 90 W),
+Intel Core Ultra 7 356H, 32 GB RAM, Windows 11. Any 8 GB NVIDIA GPU with CUDA 12.8+ should work.
+
+```bash
+python -m venv .venv && .venv\Scripts\activate          # Linux/macOS: source .venv/bin/activate
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+pip install -r requirements.txt
+nvidia-smi                                                # check the GPU is visible
+pytest -q tests                                           # 30 s, tiny model, no downloads
+
+python run_all.py --dry-run                               # see every command first
+python run_all.py                                         # data → train → calibrate → ablations → latency → release
+python run_all.py --steps publish                         # upload to Hugging Face (hf auth login first)
+python run_all.py --steps di_text di_vision --di-kit ../decision-index   # leaderboard runs
+```
+
+Rough timings on the RTX 5070 Laptop: data 1–2 h (downloads), ~1.5 h per training run
+(3 seeds of v2 + 4 ablation runs ≈ 10–12 h, good overnight), evaluation 1–2 h, full Decision Index
+text suite many hours. Every step resumes and skips finished work.
+
+Individual steps:
+
+```bash
+python train.py --model Qwen/Qwen3-VL-2B-Instruct --train data/v2/train.jsonl --val data/v2/val.jsonl --out runs/v2_seed0
+python calibrate.py --run runs/v2_seed0 --val data/v2/val.jsonl --test data/v2/test_text.jsonl data/v2/test_vision.jsonl
+python -m eval.evaluate --kind base --model Qwen/Qwen3-VL-2B-Instruct --test data/v2/test_vision.jsonl
+python -m eval.ablations --config eval/ablations.json --out results
+python -m eval.latency --run runs/v2_seed0
+```
+
+## Comparisons
+
+See [docs/METHODOLOGY.md](docs/METHODOLOGY.md). In short:
+
+| ID | Model | Question it answers |
+|---|---|---|
+| A | base Qwen3-VL-2B, zero-shot letter probabilities | is fine-tuning better than the base model? |
+| B | head only (backbone frozen) | how much does the head alone add? |
+| C | v1 recipe (hard cross-entropy) | do soft targets + RPS help? |
+| D | v2, 3 seeds | the release model, with seed spread |
+| E1/E2 | text-only / image-only training | does mixing modalities help or hurt each? |
+| F1/F2 | 9B teacher and same-size 2B, generative via Ollama | accuracy and speed vs generative models |
+
+Metrics: accuracy, chance-adjusted skill, ECE, Brier, NLL, accuracy/coverage at confidence ≥ 0.9, AURC,
+p50/p95 latency (1 vs 8 questions per state, cached vs uncached), peak VRAM. Results land in
+`results/ablations.md` and `results/latency.md` and are copied into the model card.
+
+## Jev Decision Index
+
+`di_engine.py` plugs this model into the leaderboard kit (text and vision boards), following its
+rules: one fixed prompt for every benchmark, every option scored, nothing truncated. How to run and
+submit: [docs/SUBMITTING.md](docs/SUBMITTING.md).
+
+## Repository
 
 ```
-jev/format.py                 prompt layout, option-span tokenization, image tokens, batching
-jev/model.py                  MiniJev = AutoModel (no LM head) + LoRA + AnswerHead; save/load
-train.py                      training loop (bf16/fp16, grad accumulation, checkpointing)
-calibrate.py                  temperature scaling, ECE / Brier / selective accuracy, reliability plot
-infer.py                      JevRunner.decide(...)
-bench_vs_ollama.py            accuracy + latency vs an Ollama model with structured output
-data/make_images.py           procedural charts / shape scenes with exact labels
-data/make_public_mm.py        Food-101 photos (+ zero-shot held-out classes)
-data/make_synthetic_mm.py     Ollama vision teacher: enrich labelled images / propose tasks for photos
-data/make_benchmark_mm.py     ScienceQA image questions -> decision JSONL
-data/split.py                 split by task / image id
-data/synthetic/               teacher-enriched procedural questions (text only, no images)
-data/make_public.py           (text-only) public datasets -> decision JSONL
-data/make_synthetic.py        (text-only) Ollama teacher: tasks -> contexts -> verified
+jev/schema.py        question types, validation, answers                jev/encode.py   prompt rendering, image tokens
+jev/model.py         backbone + LoRA + answer head, prefix/suffix passes jev/decide.py   cached inference, chunking, limits
+jev/losses.py        soft CE, RPS, Brier                                jev/metrics.py  accuracy, skill, ECE, AURC, ...
+train.py  calibrate.py  infer.py  serve.py  di_engine.py  publish_hf.py  run_all.py
+eval/                predictors (mini-Jev, base zero-shot, Ollama), evaluate, ablations, latency
+data/                text_public, vision_public, procedural images, Food-101, convert_v1, build_mix, decontam
+tests/               tiny random Qwen3-VL: cached = full, training, server, leaderboard engine
 ```
 
-The text-only pipeline from the original code is still here and only smoke-tested (a few training steps),
-not trained at scale.
+## v1 results (for reference)
 
-## Notes
-
-- Trained weights are not part of this repository. Download them from
-  [Hugging Face](https://huggingface.co/AstitwaAgarwal/multimodal-jev)
-  (`huggingface_hub.snapshot_download("AstitwaAgarwal/multimodal-jev")`) and pass that folder to
-  `JevRunner`, or rebuild them with the steps above (about 1.5 hours end to end on an 8 GB laptop GPU,
-  most of it teacher generation).
-- ScienceQA data and the Food-101 photos are not redistributed; the scripts download them.
-- The teacher model's outputs are used as training text. Check the model's licence for your use.
+v1 (Qwen3-VL-2B, synthetic charts + 10 food classes, 244 steps) on an RTX 5070 Laptop: 90.2 % on held-out
+procedural images, 96.7 % on unseen Food-101 dishes (4 options), 81.3 % zero-shot on ScienceQA image questions
+(teacher qwen3.5:9b: 95.7 %), 86 ms per question vs 1,132 ms for the teacher. Small single-seed test sets.
 
 ## Licence
 
-Apache-2.0, see [LICENSE](LICENSE). The base model `Qwen/Qwen3-VL-2B-Instruct` is also Apache-2.0.
+Apache-2.0, see [LICENSE](LICENSE). The base model `Qwen/Qwen3-VL-2B-Instruct` is Apache-2.0. Public datasets
+are downloaded by the scripts under their own licences and are not redistributed.

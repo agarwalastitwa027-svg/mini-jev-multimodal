@@ -1,0 +1,24 @@
+{
+  "tests": {
+    "test_text": "data/v2/test_text.jsonl",
+    "test_vision": "data/v2/test_vision.jsonl",
+    "zeroshot": "data/v2/test_zeroshot.jsonl",
+    "scienceqa": "data/v2/bench_scienceqa.jsonl"
+  },
+  "limit": null,
+  "entries": [
+    {"name": "A. Base Qwen3-VL-2B, zero-shot letters", "kind": "base", "model": "Qwen/Qwen3-VL-2B-Instruct"},
+    {"name": "B. Head only (backbone frozen)", "kind": "minijev",
+     "paths": ["runs/headonly_seed0", "runs/headonly_seed1", "runs/headonly_seed2"]},
+    {"name": "C. v1 recipe (hard CE)", "kind": "minijev",
+     "paths": ["runs/v1recipe_seed0", "runs/v1recipe_seed1", "runs/v1recipe_seed2"]},
+    {"name": "D. v2 (soft + ordinal loss, text+vision)", "kind": "minijev",
+     "paths": ["runs/v2_seed0", "runs/v2_seed1", "runs/v2_seed2"]},
+    {"name": "E1. v2 trained on text only", "kind": "minijev",
+     "paths": ["runs/textonly_seed0", "runs/textonly_seed1", "runs/textonly_seed2"]},
+    {"name": "E2. v2 trained on vision only", "kind": "minijev",
+     "paths": ["runs/visiononly_seed0", "runs/visiononly_seed1", "runs/visiononly_seed2"]},
+    {"name": "F1. Teacher qwen3.5:9b (Ollama, generative)", "kind": "ollama", "model": "qwen3.5:9b-q4_K_M"},
+    {"name": "F2. Same-size qwen3-vl:2b (Ollama, generative)", "kind": "ollama", "model": "qwen3-vl:2b"}
+  ]
+}
