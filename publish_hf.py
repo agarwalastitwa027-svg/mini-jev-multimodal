@@ -136,9 +136,12 @@ def model_card(meta, mix, results_dir, cal, di_text, di_vision, repo, lora, deco
         lines += [f"- Data: {mix['questions'].get('train', '?')} training questions "
                   f"({q.get('text', 0)} text, {q.get('vision', 0)} image) from: {', '.join(sources)}.",
                   "- **Decontamination:** no split of any Jev Decision Index benchmark is used for training"
-                  + (f"; training rows overlapping the Decision Index suites (13-gram text overlap, exact image "
-                     f"hash) were removed ({decontam.get('total', 0) - decontam.get('kept', 0)} of "
-                     f"{decontam.get('total', 0)} rows)." if decontam else
+                  + (f"; training rows were checked against the Decision Index suites by 13-gram text overlap"
+                     + (" and exact image hash" if decontam.get("suite_images") else
+                        " (image hashes were not checked: the vision suite was not built)")
+                     + f", and {decontam.get('total', 0) - decontam.get('kept', 0)} of "
+                     f"{decontam.get('total', 0)} rows overlapped and were removed. The text check used a locally "
+                     "rebuilt copy of the suite that is not byte-identical to the leaderboard's." if decontam else
                      "; the overlap check against the downloaded Decision Index suites has not been run yet."), ""]
     lines += ["## Results", ""]
     if di_text or di_vision:
