@@ -30,3 +30,5 @@ Results: 149,432 requests completed, all answered, no errors.
 
 Skill = (score - chance) / (1 - chance), clipped to 0-1, then weighted by the kit; 0 is random guessing.
 Per-benchmark scores are in `decision_index_text_scores_unofficial.json`. Vision board not run.
+
+Full per-request results (233 MB): https://huggingface.co/datasets/AstitwaAgarwal/decision-index-results

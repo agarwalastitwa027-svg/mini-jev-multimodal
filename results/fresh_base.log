@@ -1,0 +1,9 @@
+Loading weights:   0%|          | 0/625 [00:00<?, ?it/s]Loading weights: 100%|██████████| 625/625 [00:00<00:00, 20037.91it/s]
+  200/600
+  400/600
+  600/600
+test_fresh.jsonl: acc 0.6117 skill 0.3786 ece 0.3573 nll 3.2644 unanswered 0/600 p50 39 ms
+  200/720
+  400/720
+  600/720
+test_zeroshot.jsonl: acc 0.6833 skill 0.5965 ece 0.2661 nll 2.3641 unanswered 0/720 p50 40 ms
