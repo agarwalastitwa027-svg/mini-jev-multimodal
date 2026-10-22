@@ -151,7 +151,10 @@ def model_card(meta, mix, results_dir, cal, di_text, di_vision, repo, lora, deco
                 v = d.get("index")
                 lines.append(f"| {name} | {v:.2f} | {d.get('edition') or '–'} | {d.get('complete')} |" if isinstance(v, (int, float))
                              else f"| {name} | – | {d.get('edition') or '–'} | {d.get('complete')} |")
-        lines.append("")
+        lines += ["", "**Unofficial.** These scores come from a locally rebuilt copy of the suite whose core rows are not "
+                  "byte-identical to the leaderboard's, with ToolRet-retrieval and BRIGHT-retrieval not run (an 8 GB GPU "
+                  "cannot finish them; they count as wrong). Not a leaderboard entry. Details: "
+                  "`results/decision_index_text_unofficial.md` in the GitHub repo.", ""]
     lines += calibration_table(cal)
     if abl:
         lines += [abl.replace("# Ablations", "### Comparisons (own test sets)"), ""]
