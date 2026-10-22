@@ -1,4 +1,4 @@
-"""Typed decision questions and the v2 data format.
+"""Typed decision questions and the data format.
 
 A request (and a training row) is one *state* plus several typed questions about it:
 

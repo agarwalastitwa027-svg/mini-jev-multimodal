@@ -1,4 +1,4 @@
-"""Write a tiny v2 dataset (text + image rows, all three question types) for tests and CI."""
+"""Write a tiny dataset (text + image rows, all three question types) for tests and CI."""
 from __future__ import annotations
 
 import json

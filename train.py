@@ -1,12 +1,12 @@
-"""Train mini-Jev v2: LoRA on the backbone + a fresh answer head, typed losses over the options.
+"""Train mini-Jev: LoRA on the backbone + a fresh answer head, typed losses over the options.
 
 8 GB laptop GPU (RTX 5070 Laptop), the default recipe:
     python train.py --model Qwen/Qwen3-VL-2B-Instruct \
-        --train data/v2/train.jsonl --val data/v2/val.jsonl --out runs/v2_seed0 --seed 0
+        --train data/mix/train.jsonl --val data/mix/val.jsonl --out runs/full_seed0 --seed 0
 
 Ablations (same data, see docs/METHODOLOGY.md):
     --lora-r 0                 head only, backbone frozen            (B)
-    --loss v1                  v1 recipe: hard cross-entropy only    (C)
+    --loss hard                hard-label recipe: hard cross-entropy only    (C)
     --modalities text          text-only training                    (E)
     --modalities vision        vision-only training                  (E)
 
@@ -87,7 +87,7 @@ def main():
     ap.add_argument("--model", default="Qwen/Qwen3-VL-2B-Instruct")
     ap.add_argument("--train", nargs="+", required=True)
     ap.add_argument("--val", nargs="+", required=True)
-    ap.add_argument("--out", default="runs/v2")
+    ap.add_argument("--out", default="runs/model")
     ap.add_argument("--name", default="mini-jev-multimodal")
     ap.add_argument("--epochs", type=float, default=2.0)
     ap.add_argument("--max-steps", type=int, default=0, help="optimizer steps; overrides --epochs")
@@ -98,7 +98,7 @@ def main():
     ap.add_argument("--head-lr", type=float, default=1e-3)
     ap.add_argument("--lora-r", type=int, default=16, help="0 = freeze the backbone, train the head only")
     ap.add_argument("--head-dim", type=int, default=256)
-    ap.add_argument("--loss", choices=["v2", "v1"], default="v2")
+    ap.add_argument("--loss", choices=["soft", "hard"], default="soft")
     ap.add_argument("--rps-weight", type=float, default=1.0)
     ap.add_argument("--brier-weight", type=float, default=0.0)
     ap.add_argument("--label-smoothing", type=float, default=0.0)

@@ -1,5 +1,5 @@
 {
- "predictor": "runs/v1recipe_seed0",
+ "predictor": "runs/hardlabel_seed0",
  "files": {
   "test_more.jsonl": {
    "metrics": {

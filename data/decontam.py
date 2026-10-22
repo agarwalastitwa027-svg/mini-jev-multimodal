@@ -3,8 +3,8 @@
     # get the suites first (inside a clone of github.com/apolinario/decision-index):
     #   python -m decision_index suite download --dir suite
     #   decision-index suite rebuild --vision --work work          (optional, for image hashes)
-    python data/decontam.py --train data/v2/train.jsonl --suite-dir ../decision-index/suite \
-        --vision-dir ../decision-index/work/vision --out data/v2/train.jsonl
+    python data/decontam.py --train data/mix/train.jsonl --suite-dir ../decision-index/suite \
+        --vision-dir ../decision-index/work/vision --out data/mix/train.jsonl
 
 Text: word 13-grams of the normalised state + question text, sampled consistently (a gram is kept
 when its hash is divisible by --sample, on both sides, so overlaps are still found). A training row

@@ -1,7 +1,7 @@
-"""Public image datasets -> v2 rows.
+"""Public image datasets -> rows.
 
-    python data/vision_public.py --out data/v2/src/vision_public.jsonl --per-dataset 3000
-    python data/vision_public.py --bench-only --out data/v2/bench_scienceqa.jsonl     # ScienceQA test, zero-shot
+    python data/vision_public.py --out data/mix/src/vision_public.jsonl --per-dataset 3000
+    python data/vision_public.py --bench-only --out data/mix/bench_scienceqa.jsonl     # ScienceQA test, zero-shot
 
 Sources (none is part of the Decision Index vision board, see data/common.py):
   scienceqa  derek-thomas/ScienceQA   multiple choice; rows without an image become text rows
@@ -117,7 +117,7 @@ def stream(hf, cfg, split, n):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--out", default="data/v2/src/vision_public.jsonl")
+    ap.add_argument("--out", default="data/mix/src/vision_public.jsonl")
     ap.add_argument("--img-dir", default="data/images")
     ap.add_argument("--max-side", type=int, default=1024)
     ap.add_argument("--per-dataset", type=int, default=3000)
@@ -126,7 +126,7 @@ def main():
     ap.add_argument("--only", nargs="*", default=None, help="subset of: " + " ".join(SOURCES))
     ap.add_argument("--holdout", nargs="*", default=[], help="sources written as zero-shot test only")
     ap.add_argument("--bench-only", action="store_true",
-                    help="write only the ScienceQA *test* image questions (the v1 public benchmark)")
+                    help="write only the ScienceQA *test* image questions (the public benchmark)")
     ap.add_argument("--bench-n", type=int, default=300)
     a = ap.parse_args()
     os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)

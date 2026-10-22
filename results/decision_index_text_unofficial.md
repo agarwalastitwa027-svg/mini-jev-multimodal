@@ -1,6 +1,6 @@
 # Decision Index text run (unofficial)
 
-Model: `AstitwaAgarwal/multimodal-jev` (v2, seed 0), run with `di_engine:MiniJevEngine`, `max_tokens=16384`,
+Model: `AstitwaAgarwal/multimodal-jev` (seed 0), run with `di_engine:MiniJevEngine`, `max_tokens=16384`,
 on an RTX 5070 Laptop (8 GB). Edition 0.2.1 of the kit at github.com/apolinario/decision-index.
 
 **This is not a leaderboard entry.** The official suite dataset is not downloadable, so the suite was rebuilt

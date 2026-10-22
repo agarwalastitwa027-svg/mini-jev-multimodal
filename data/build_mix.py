@@ -1,6 +1,6 @@
-"""Combine v2 source files into the training mix and the test sets.
+"""Combine source files into the training mix and the test sets.
 
-    python data/build_mix.py --inputs data/v2/src/*.jsonl --out data/v2
+    python data/build_mix.py --inputs data/mix/src/*.jsonl --out data/mix
 
 Outputs in --out:
     train.jsonl, val.jsonl          training / checkpoint selection (both modalities)
@@ -27,7 +27,7 @@ from data.common import is_di_family, split_of  # noqa: E402
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--inputs", nargs="+", required=True)
-    ap.add_argument("--out", default="data/v2")
+    ap.add_argument("--out", default="data/mix")
     ap.add_argument("--val", type=float, default=0.05)
     ap.add_argument("--test", type=float, default=0.10)
     ap.add_argument("--max-train-per-source", type=int, default=0, help="0 = no cap")

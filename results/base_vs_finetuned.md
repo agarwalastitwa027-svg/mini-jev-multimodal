@@ -1,8 +1,8 @@
 # Base Qwen3-VL-2B vs the fine-tuned model on data neither has seen
 
 Same questions for both. The base model answers by reading option-letter probabilities (zero-shot);
-the fine-tuned model is `AstitwaAgarwal/multimodal-jev` (v2, seed 0). Acc in %. ECE and NLL: lower is better.
-`tweet_irony` and `arc_challenge` come from `data/v2/test_fresh.jsonl` (300 questions each, datasets that
+the fine-tuned model is `AstitwaAgarwal/multimodal-jev` (seed 0). Acc in %. ECE and NLL: lower is better.
+`tweet_irony` and `arc_challenge` come from `data/mix/test_fresh.jsonl` (300 questions each, datasets that
 appear nowhere in training); the others are the zero-shot (held-out) sources. Each set has only 120-300
 questions, so differences of 1-3 points are within noise.
 

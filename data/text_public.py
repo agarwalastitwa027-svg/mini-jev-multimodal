@@ -1,9 +1,9 @@
-"""Public text datasets -> v2 rows (several typed questions per state where the data allows).
+"""Public text datasets -> rows (several typed questions per state where the data allows).
 
-None of these is scored by the Jev Decision Index (see data/common.py: DI_FAMILIES); v1's
+None of these is scored by the Jev Decision Index (see data/common.py: DI_FAMILIES); the
 banking77 and clinc converters were removed for that reason.
 
-    python data/text_public.py --out data/v2/src/text_public.jsonl --per-dataset 3000
+    python data/text_public.py --out data/mix/src/text_public.jsonl --per-dataset 3000
 
 Each row carries a `split`: train/val come from the dataset's train split, test from its official
 eval split. Datasets in --holdout are written with split "zeroshot" only (never trained on).
@@ -28,7 +28,7 @@ def labels_of(ds, col):
     return ds.features[col].names
 
 
-# ------------------------------------------------------------------ converters: ds rows -> v2 rows
+# ------------------------------------------------------------------ converters: ds rows -> rows
 
 def conv_ag_news(ds):
     names = ["World", "Sports", "Business", "Science/Technology"]
@@ -132,7 +132,7 @@ def take(ds, n):
 def main():
     from datasets import load_dataset
     ap = argparse.ArgumentParser()
-    ap.add_argument("--out", default="data/v2/src/text_public.jsonl")
+    ap.add_argument("--out", default="data/mix/src/text_public.jsonl")
     ap.add_argument("--per-dataset", type=int, default=3000, help="train rows per dataset")
     ap.add_argument("--eval-per-dataset", type=int, default=300)
     ap.add_argument("--val-frac", type=float, default=0.05)

@@ -1,10 +1,10 @@
 """Latency, throughput and memory of a run, with and without the shared-state cache.
 
-    python -m eval.latency --run runs/v2_seed0 --out results/latency.json
+    python -m eval.latency --run runs/full_seed0 --out results/latency.json
 
 For each state size (text tokens, and with one image) it times one request with 1 question and with
 N questions about the same state, cached (state encoded once) and uncached (each question re-reads
-the state, the v1 behaviour). Reports p50 / p95 over --reps timed calls after warm-up, and peak VRAM.
+the state, the naive behaviour). Reports p50 / p95 over --reps timed calls after warm-up, and peak VRAM.
 """
 from __future__ import annotations
 

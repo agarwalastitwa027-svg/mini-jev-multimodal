@@ -1,4 +1,4 @@
-"""mini-Jev v2: a vision-language backbone with the LM head removed, plus an answer head.
+"""mini-Jev: a vision-language backbone with the LM head removed, plus an answer head.
 
     backbone  = AutoModel (e.g. Qwen3VLModel): transformer layers, NO lm_head, LoRA on the text layers
     q         = W_q * h[last token of the question suffix]   (has read images, state, question, options)
@@ -133,7 +133,7 @@ class MiniJev(nn.Module):
         head = AnswerHead(hidden_size(backbone.config), meta["head_dim"])
         cal = os.path.join(run_dir, "head_calibrated.pt")
         state = torch.load(cal if os.path.exists(cal) else os.path.join(run_dir, "head.pt"), map_location="cpu")
-        if state.get("temperature") is not None and state["temperature"].numel() == 1:  # v1 head
+        if state.get("temperature") is not None and state["temperature"].numel() == 1:  # legacy single-temperature head
             state["temperature"] = state["temperature"].repeat(len(TYPES))
         head.load_state_dict(state)
         model = cls(backbone, head, meta)

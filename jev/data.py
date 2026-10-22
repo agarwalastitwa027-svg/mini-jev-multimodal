@@ -1,4 +1,4 @@
-"""Reading v2 rows and turning them into per-question training examples."""
+"""Reading rows and turning them into per-question training examples."""
 from __future__ import annotations
 
 import gzip

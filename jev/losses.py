@@ -6,7 +6,7 @@
                       predicting 1; a strictly proper scoring rule, so honest probabilities minimise it
   Brier (optional)    sum_j (p_j - t_j)^2
 
-mode "v1" reproduces the v1 recipe (hard cross-entropy on the argmax target only) for the ablation.
+mode "hard" reproduces the hard-label recipe (hard cross-entropy on the argmax target only) for the ablation.
 """
 from __future__ import annotations
 
@@ -24,13 +24,13 @@ def rps(p: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
 
 
 def decision_loss(logits: List[torch.Tensor], targets: List[List[float]], types: List[str],
-                  mode: str = "v2", rps_weight: float = 1.0, brier_weight: float = 0.0,
+                  mode: str = "soft", rps_weight: float = 1.0, brier_weight: float = 0.0,
                   label_smoothing: float = 0.0) -> torch.Tensor:
     total = logits[0].new_zeros((), dtype=torch.float32)
     for lg, tgt, ty in zip(logits, targets, types):
         lg = lg.float()
         t = torch.tensor(tgt, dtype=torch.float32, device=lg.device)
-        if mode == "v1":
+        if mode == "hard":
             total = total + F.cross_entropy(lg[None], t.argmax()[None])
             continue
         if label_smoothing > 0:

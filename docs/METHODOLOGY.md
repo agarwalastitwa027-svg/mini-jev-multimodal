@@ -1,6 +1,6 @@
-# Methodology and comparisons (v2)
+# Methodology and comparisons
 
-This document says what v2 changes, why, and exactly which comparisons the results tables report.
+This document says how the model works and was trained, and exactly which comparisons the results tables report.
 
 ## 1. What a decision model is here
 
@@ -50,16 +50,16 @@ questions as `choice`; `score` is an extension for our own data.
 |---|---|---|---|
 | text | AG News, DBpedia-14, Yelp (score + noul), BoolQ, MNLI (choice + noul), SST-2 (noul + choice), CommonsenseQA | 1–2 | train split → train/val, official eval split → test |
 | text (zero-shot) | Emotion, OpenBookQA | 1 | never trained on |
-| image | procedural charts and shapes (exact labels from the drawing code, teacher-reworded) | up to 6 | v1 data, converted |
-| image | Food-101 seen classes | 1 | v1 data, converted |
+| image | procedural charts and shapes (exact labels from the drawing code, teacher-reworded) | up to 6 | earlier synthetic data, converted |
+| image | Food-101 seen classes | 1 | earlier synthetic data, converted |
 | image | ScienceQA train (image rows; text rows go to the text side), A-OKVQA, ChartQA (4-way from free-form) | 1 | |
 | image (zero-shot) | Food-101 held-out classes | 1 | never trained on |
-| benchmark | ScienceQA test image questions (300) | 1 | v1's public benchmark, kept for continuity |
+| benchmark | ScienceQA test image questions (300) | 1 | public benchmark, zero-shot |
 
 **Decontamination.** No split of any Decision Index benchmark (text or vision board) is trained on;
 `data/build_mix.py` refuses such sources. `data/decontam.py` then removes training rows whose sampled
 13-grams overlap the downloaded suite by ≥ 50 %, short rows that occur verbatim, and images whose sha256
-matches a suite image. v1's BANKING77 and CLINC150 converters were removed because both are on the board.
+matches a suite image. The BANKING77 and CLINC150 converters were removed because both are on the board.
 
 ## 4. Comparisons
 
@@ -69,9 +69,9 @@ All comparisons use the same test files. Unanswered rows count as wrong.
 |---|---|---|
 | A | Base Qwen3-VL-2B, zero-shot: same state/question, options lettered A–Z, next-token letter probabilities | Is fine-tuning better than the base model? |
 | B | Head only (`--lora-r 0`) | How much does the head alone get, without adapting the backbone? |
-| C | v1 recipe (`--loss v1`: hard cross-entropy) | Do soft targets and RPS help accuracy or calibration? |
-| D | v2 (full recipe), 3 seeds | The release model; seed spread shows run-to-run noise |
-| E1 / E2 | v2 trained on text only / image only | Does mixing modalities help or hurt each one? |
+| C | Hard-label recipe (`--loss hard`: hard cross-entropy) | Do soft targets and RPS help accuracy or calibration? |
+| D | Full recipe (mini-Jev), 3 seeds | The release model; seed spread shows run-to-run noise |
+| E1 / E2 | Trained on text only / image only | Does mixing modalities help or hurt each one? |
 | F1 | Teacher `qwen3.5:9b` via Ollama (generative, enum output) | Accuracy gap vs a 4.5× larger generative model, and the speed gap |
 | F2 | `qwen3-vl:2b` via Ollama (generative) | Same size, generative vs decision head |
 
@@ -93,7 +93,7 @@ Clef-flash, JevK5 and Tiny-Jev on the Jev Decision Index.
 | `test_text.jsonl` | held-out rows of the text sources seen in training |
 | `test_vision.jsonl` | held-out rows of the image sources seen in training |
 | `test_zeroshot.jsonl` | sources never trained on (Emotion, OpenBookQA, Food-101 held-out classes) |
-| `bench_scienceqa.jsonl` | ScienceQA test image questions (comparable with v1) |
+| `bench_scienceqa.jsonl` | ScienceQA test image questions |
 | Decision Index text suite | 37 benchmarks, 5 areas, the public leaderboard |
 | Decision Index vision board | 11 public benchmarks (50 % of the Full score; maintainers run the private half) |
 

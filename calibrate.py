@@ -1,7 +1,7 @@
 """Fit one temperature per question type on validation data, then evaluate test files.
 
-    python calibrate.py --run runs/v2_seed0 --val data/v2/val.jsonl \
-        --test data/v2/test_text.jsonl data/v2/test_vision.jsonl data/v2/test_zeroshot.jsonl
+    python calibrate.py --run runs/full_seed0 --val data/mix/val.jsonl \
+        --test data/mix/test_text.jsonl data/mix/test_vision.jsonl data/mix/test_zeroshot.jsonl
 
 Writes into the run folder:
     head_calibrated.pt   the answer head with fitted temperatures (loaded automatically afterwards)

@@ -1,6 +1,6 @@
-"""Run one predictor over v2 test files and report decision metrics, per modality and per source.
+"""Run one predictor over test files and report decision metrics, per modality and per source.
 
-    python -m eval.evaluate --kind minijev --path runs/v2_seed0 --test data/v2/test_text.jsonl data/v2/test_vision.jsonl
+    python -m eval.evaluate --kind minijev --path runs/full_seed0 --test data/mix/test_text.jsonl data/mix/test_vision.jsonl
     python -m eval.evaluate --kind base --model Qwen/Qwen3-VL-2B-Instruct --test ...
     python -m eval.evaluate --kind ollama --model qwen3.5:9b-q4_K_M --test ... --limit 300
 

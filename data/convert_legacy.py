@@ -1,10 +1,10 @@
-"""Convert v1 decision rows ({context, question, options, answer, image?}) into v2 rows.
+"""Convert legacy single-question rows ({context, question, options, answer, image?}) into the typed row format.
 
-Rows that share the same image and context become ONE v2 row with several questions, which is
+Rows that share the same image and context become ONE row with several questions, which is
 what the shared-state cache is for (the procedural charts have ~6 questions per image).
 
-    python data/convert_v1.py data/synthetic/mm_enriched.jsonl data/v2/src/procedural.jsonl --modality vision
-    python data/convert_v1.py data/mm_food_train.jsonl data/v2/src/food101.jsonl --modality vision
+    python data/convert_legacy.py data/synthetic/mm_enriched.jsonl data/mix/src/procedural.jsonl --modality vision
+    python data/convert_legacy.py data/mm_food_train.jsonl data/mix/src/food101.jsonl --modality vision
 """
 import argparse
 import json
@@ -36,7 +36,7 @@ def convert(rows, modality=None, max_questions=16):
             out.append({
                 "id": f"{first.get('task_id', image or context[:40])}#{start}",
                 "group": str(first.get("task_id", image or context[:80])),
-                "source": first.get("source", "v1"),
+                "source": first.get("source", "legacy"),
                 "modality": modality or ("vision" if image else "text"),
                 "state": context,
                 "images": [image] if image else [],
@@ -65,7 +65,7 @@ def main():
         for r in out:
             f.write(json.dumps(r, ensure_ascii=False) + "\n")
     nq = sum(len(r["questions"]) for r in out)
-    print(f"{a.inp}: {len(rows)} v1 rows -> {len(out)} v2 rows, {nq} questions -> {a.out}")
+    print(f"{a.inp}: {len(rows)} legacy rows -> {len(out)} rows, {nq} questions -> {a.out}")
 
 
 if __name__ == "__main__":

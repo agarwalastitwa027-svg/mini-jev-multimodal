@@ -4781,7 +4781,7 @@
   },
   "_seeds": 1
  },
- "C. v1 recipe (hard CE)": {
+ "C. Hard-label recipe (hard CE)": {
   "test_text": {
    "all": {
     "n": [
@@ -7172,7 +7172,7 @@
   },
   "_seeds": 1
  },
- "D. v2 (soft + ordinal loss, text+vision)": {
+ "D. This model (soft + ordinal loss, text+vision)": {
   "test_text": {
    "all": {
     "n": [
@@ -9563,7 +9563,7 @@
   },
   "_seeds": 3
  },
- "E1. v2 trained on text only": {
+ "E1. Trained on text only": {
   "test_text": {
    "all": {
     "n": [
@@ -11954,7 +11954,7 @@
   },
   "_seeds": 1
  },
- "E2. v2 trained on vision only": {
+ "E2. Trained on vision only": {
   "test_text": {
    "all": {
     "n": [

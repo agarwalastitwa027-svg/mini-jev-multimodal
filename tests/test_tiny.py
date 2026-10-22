@@ -151,7 +151,7 @@ def test_schema_helpers():
 
 def test_converters_and_metrics(tmp_path):
     from data.common import is_di_family, question_from_options
-    from data.convert_v1 import convert
+    from data.convert_legacy import convert
     from jev.metrics import summarize
     assert question_from_options("?", ["yes", "no"])["type"] == "noul"
     assert question_from_options("?", ["1", "2", "3", "4", "5"])["type"] == "score"

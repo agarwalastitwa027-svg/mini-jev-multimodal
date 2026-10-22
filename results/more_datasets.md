@@ -1,14 +1,14 @@
 # Wider test: 16 open datasets that appear nowhere in training
 
-Models: base Qwen3-VL-2B-Instruct (zero-shot option-letter probabilities), the v1 recipe (hard cross-entropy,
-seed 0) and the released v2 (`AstitwaAgarwal/multimodal-jev`, seed 0). Same 3,678 questions for all three
+Models: base Qwen3-VL-2B-Instruct (zero-shot option-letter probabilities), the hard-label recipe (hard cross-entropy,
+seed 0) and the released mini-Jev model (`AstitwaAgarwal/multimodal-jev`, seed 0). Same 3,678 questions for all three
 (250 per text dataset, 200 per image dataset, 128 for beans). Acc in %; ECE and NLL: lower is better.
 Rebuild the set with `data/make_more_tests.py`-style conversion of: allenai/sciq, allenai/qasc, GLUE rte/qnli/mrpc,
 stanfordnlp/snli, stanfordnlp/imdb, cardiffnlp/tweet_eval (hate, offensive),
 zeroshot/twitter-financial-news-sentiment, SetFit/20_newsgroups, uoft-cs/cifar10, cifar100 (20 coarse classes),
 zalando-datasets/fashion_mnist, ylecun/mnist, AI-Lab-Makerere/beans. TREC was skipped (script-only dataset).
 
-| Dataset | n | Chance | Base acc | v1recipe acc | **v2 acc** | Base ECE | v2 ECE | Base NLL | v2 NLL |
+| Dataset | n | Chance | Base acc | Hard-label acc | **mini-Jev acc** | Base ECE | mini-Jev ECE | Base NLL | mini-Jev NLL |
 |---|---|---|---|---|---|---|---|---|---|
 | beans | 128 | 33 | 58.6 | 60.2 | **55.5** | 0.394 | 0.222 | 2.38 | 0.88 |
 | cifar10 | 200 | 10 | 96.0 | 96.5 | **98.0** | 0.026 | 0.064 | 0.10 | 0.13 |
@@ -31,11 +31,11 @@ zalando-datasets/fashion_mnist, ylecun/mnist, AI-Lab-Makerere/beans. TREC was sk
 | **vision** | 928 | 12 | 77.4 | 77.0 | **76.4** | 0.171 | 0.050 | 1.25 | 0.61 |
 
 Reading it:
-- v2 beats the base model's accuracy on 9 of 16 datasets. The big wins are where the base model's letter readout is
+- mini-Jev beats the base model's accuracy on 9 of 16 datasets. The big wins are where the base model's letter readout is
   weak: tweet_offensive (+34 points), snli (+19), fin_news (+30), rte (+13).
-- v2 is not better on every set. It is slightly worse on image sets fashion_mnist and beans, and on 20-way
+- mini-Jev is not better on every set. It is slightly worse on image sets fashion_mnist and beans, and on 20-way
   newsgroups (44.8 vs 56.0); sciq, imdb and mnist are within about 1 point (noise at n=200-250).
 - Calibration improves almost everywhere: overall ECE 0.240 -> 0.037 and NLL 2.04 -> 0.59.
-- v2 and the v1 recipe are tied overall (76.8 vs 76.5).
+- mini-Jev and the hard-label recipe are tied overall (76.8 vs 76.5).
 - snli is close to MNLI, which was in the training mix, so part of that gain is task transfer rather than new skill.
 - Single seed, 128-250 questions per dataset: differences of a few points are within noise.

@@ -1,5 +1,5 @@
 {
- "run": "runs/v2_seed0",
+ "run": "runs/full_seed0",
  "device": "NVIDIA GeForce RTX 5070 Laptop GPU",
  "dtype": "torch.bfloat16",
  "results": [

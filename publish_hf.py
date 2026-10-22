@@ -5,7 +5,7 @@
     python publish_hf.py ... --dry-run # build the upload folder and README only, upload nothing
 
 What it does
-  1. keeps the current `main` of an existing repo on a branch (default "v1") before replacing it;
+  1. optionally (--keep-branch NAME) keeps the current `main` of an existing repo on a branch before replacing it;
   2. stages the run (LoRA adapters, answer head with calibrated temperatures, tokenizer, image processor,
      meta, calibration report) plus results tables, and optionally merged full weights (--merged);
   3. writes README.md (model card) from meta.json, mix_report.json, results/ and Decision Index scores;
@@ -80,6 +80,48 @@ def calibration_table(cal):
     return out + [""]
 
 
+def first_table(path):
+    """The first markdown table in a file, as a list of lines."""
+    out, started = [], False
+    for line in (read(path, "") or "").splitlines():
+        if line.startswith("|"):
+            out.append(line)
+            started = True
+        elif started:
+            break
+    return out
+
+
+def comparison_section(results_dir):
+    """Base model vs mini-Jev, shown right under the introduction."""
+    more = first_table(os.path.join(results_dir, "more_datasets.md")) if results_dir else []
+    fresh = first_table(os.path.join(results_dir, "base_vs_finetuned.md")) if results_dir else []
+    if not more:
+        return []
+    out = ["## Base model vs mini-Jev", "",
+           "The **base model** is `Qwen/Qwen3-VL-2B-Instruct` with no fine-tuning, scored zero-shot by reading the "
+           "probabilities of the option letters. mini-Jev is that same model after LoRA fine-tuning plus the answer "
+           "head and per-type calibration. Both were tested on the **same questions from 16 open datasets that "
+           "appear nowhere in training** (3,678 questions: 11 text datasets, 5 image datasets). The hard-label column "
+           "is the same recipe trained with plain cross-entropy instead of soft targets. Accuracy in %; ECE (calibration "
+           "error) and NLL (log-loss) are lower-is-better.", ""] + more + [
+           "",
+           "- **Accuracy:** overall 76.8% against 71.1% for the base model (text 77.0 vs 68.9). mini-Jev wins on 9 of 16 "
+           "datasets, with the largest gains where the base model's letter readout is weak: offensive tweets (+34 points), "
+           "financial news sentiment (+30), SNLI (+19), RTE (+13). It is slightly worse on 20-way newsgroups, "
+           "Fashion-MNIST and bean-leaf images, and level on SciQ, IMDB and MNIST.",
+           "- **Calibration:** the clearest gain. Overall ECE falls from 0.240 to 0.037 and NLL from 2.04 to 0.59, so the "
+           "probabilities can be trusted as confidences.",
+           "- **Soft vs hard targets:** the two training recipes are tied (76.8 vs 76.5), so the benefit comes from "
+           "fine-tuning and the calibrated head, not from the soft-target loss.",
+           "- Single seed and 128-250 questions per dataset: differences of a few points are within noise.", ""]
+    if fresh:
+        out += ["Earlier held-out check (two new datasets plus the three sources withheld from training):", ""] + fresh + [""]
+    out += ["More: full ablation table, per-source results and latency further down; "
+            "`results/more_datasets.md`, `results/base_vs_finetuned.md` in the repo.", ""]
+    return out
+
+
 def model_card(meta, mix, results_dir, cal, di_text, di_vision, repo, lora, decontam=None):
     base = meta.get("base_model", "Qwen/Qwen3-VL-2B-Instruct")
     ta = meta.get("train_args", {})
@@ -91,13 +133,13 @@ def model_card(meta, mix, results_dir, cal, di_text, di_vision, repo, lora, deco
         lines.append("library_name: peft")
     lines += ["tags:", "- decision-model", "- system-one", "- jev", "- typed-decisions", "- calibration",
               "- multimodal", "- vision-language", "language:", "- en", "---", "",
-              "# mini-jev-multimodal (v2)", "",
+              "# mini-jev-multimodal", "",
               "A small **decision model** for text and images. Give it a state (text and/or up to 8 images) and "
               "typed questions; it returns a probability for every allowed option in one forward pass, with no "
               "text generation. It cannot answer outside the options you supply.", "",
               "An independent, open reproduction of the idea behind System One decision models such as TypeSafe "
               "AI's Jev. Not affiliated with or derived from that product.", "",
-              f"Code, training and evaluation: <{GITHUB}>", "",
+              f"Code, training and evaluation: <{GITHUB}>", ""] + comparison_section(results_dir) + [
               "## How it works", "", "```",
               f"images + state ──► {base.split('/')[-1]} (prefill, LoRA-tuned, LM head removed) ──► KV cache (state encoded once)",
               "for each question:  suffix 'Question / Options / Answer:' ──► hidden states",
@@ -109,7 +151,17 @@ def model_card(meta, mix, results_dir, cal, di_text, di_vision, repo, lora, deco
               "- **Shared state:** the images and state are encoded once and reused for every question in the "
               "request (exactly equal to re-reading them, see the repo tests).",
               "- **No truncation:** requests over the declared limit (16,384 tokens by default) are refused, not cut.",
-              "", "## Use", "", "```bash", f"pip install git+{GITHUB}@v2", "```", "", "```python",
+              "", "## How to run it", "",
+              "Needs Python 3.10+ and a CUDA GPU (fits in 8 GB; tested on an RTX 5070 Laptop). "
+              "RTX 50-series cards need a PyTorch build for CUDA 12.8 or newer.", "", "```bash",
+              "git clone " + GITHUB + ".git && cd mini-jev-multimodal",
+              "python -m venv .venv && source .venv/bin/activate        # Windows: .venv\\Scripts\\activate",
+              "pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128",
+              "pip install -r requirements.txt",
+              f"python infer.py --run {repo}                         # smoke test: 4 decisions, prints probabilities",
+              "```", "",
+              "The adapters and answer head download automatically from this repo on first use; the base model "
+              "(`" + base + "`) is fetched from the Hub too.", "", "**From Python:**", "", "```python",
               "from jev.decide import Decider", f'jev = Decider.from_pretrained("{repo}")',
               "out = jev.decide(", '    state="My package arrived damaged and I want a refund.",', "    questions={",
               '        "queue":  {"type": "choice", "instructions": "Which queue?",',
@@ -118,11 +170,23 @@ def model_card(meta, mix, results_dir, cal, di_text, di_vision, repo, lora, deco
               '        "stars":  {"type": "score", "instructions": "How satisfied is the customer?",',
               '                   "criteria": {"1": "very unhappy", "2": "", "3": "", "4": "", "5": "very happy"}},',
               "    },", '    images=["photo.jpg"],      # optional', ")", "```", "",
-              f"Jev-compatible server: `python serve.py --run {repo}` → `POST /v1/systemone`.", "",
+              "Each answer has a `type`, the top `choice`, and `probabilities` for every option; `noul` questions return "
+              "`noul` = P(yes); `score` questions also return an expected `score`. Questions about the same state share "
+              "one encoding of it, so asking several is cheap. Pass `images=[...]` (paths or PIL images, up to 8) for "
+              "image states; omit it for text-only.", "",
+              "**As an HTTP server** (Jev-compatible `POST /v1/systemone`):", "", "```bash",
+              f"python serve.py --run {repo} --port 8000",
+              "curl -s localhost:8000/v1/systemone -H 'content-type: application/json' -d '{",
+              '  "model": "mini-jev", "state": "My package arrived damaged.",',
+              '  "questions": {"urgent": {"type": "noul", "instructions": "Is this urgent?"}}}\'',
+              "```", "",
+              "**Limits:** requests over 16,384 tokens, with more than 255 options per question or more than 8 images, "
+              "return `Unsupported` instead of being truncated. Not a text generator and not a general vision model: "
+              "it only picks among the options you give it.", "",
               "## Training", "",
               f"- Base: `{base}`, LoRA r={meta.get('lora_r')} on the text layers (vision tower frozen), answer head "
               f"d={meta.get('head_dim')}.",
-              f"- Loss: {'soft cross-entropy + ranked probability score for ordinal questions' if ta.get('loss', 'v2') == 'v2' else 'cross-entropy'}"
+              f"- Loss: {'soft cross-entropy + ranked probability score for ordinal questions' if ta.get('loss', 'soft') in ('soft', 'v2') else 'cross-entropy'}"
               f"; option order shuffled every step; text share of steps {ta.get('text_frac', 0.5)}.",
               f"- {meta.get('total_steps', '?')} optimizer steps, batch {ta.get('bs', '?')} × accumulation "
               f"{ta.get('grad_accum', '?')}, lr {ta.get('lr', '?')}, images capped at {meta.get('max_pixels')} px "
@@ -178,11 +242,11 @@ def main():
     ap.add_argument("--run", required=True)
     ap.add_argument("--repo", default="AstitwaAgarwal/multimodal-jev")
     ap.add_argument("--results", default="results")
-    ap.add_argument("--mix-report", default="data/v2/mix_report.json")
+    ap.add_argument("--mix-report", default="data/mix/mix_report.json")
     ap.add_argument("--di-text-scores", default=None, help="scores.json from the text board run")
     ap.add_argument("--di-vision-scores", default=None, help="vision-scores.json from the vision board run")
     ap.add_argument("--merged", action="store_true", help="also upload merged full weights (about 4.5 GB)")
-    ap.add_argument("--keep-branch", default="v1", help="copy the repo's current main to this branch first ('' = skip)")
+    ap.add_argument("--keep-branch", default="", help="copy the repo's current main to this branch first ('' = skip)")
     ap.add_argument("--private", action="store_true")
     ap.add_argument("--staging", default="runs/_hf_upload")
     ap.add_argument("--dry-run", action="store_true")
@@ -207,8 +271,8 @@ def main():
         m.core().save_pretrained(os.path.join(a.staging, "merged"))
     if a.results and os.path.isdir(a.results):
         os.makedirs(os.path.join(a.staging, "results"), exist_ok=True)
-        for f in ("ablations.md", "ablations.json", "latency.md", "latency.json"):
-            if os.path.exists(os.path.join(a.results, f)):
+        for f in sorted(os.listdir(a.results)):
+            if f.endswith((".md", ".json", ".png")) and os.path.isfile(os.path.join(a.results, f)):
                 shutil.copy2(os.path.join(a.results, f), os.path.join(a.staging, "results"))
     mix = read(a.mix_report)
     if mix:
@@ -237,9 +301,9 @@ def main():
     new = {os.path.relpath(os.path.join(d, f), a.staging).replace(os.sep, "/")
            for d, _, fs in os.walk(a.staging) for f in fs}
     stale = [f for f in old - new if f != ".gitattributes"]
-    api.upload_folder(folder_path=a.staging, repo_id=a.repo, commit_message="mini-jev-multimodal v2",
+    api.upload_folder(folder_path=a.staging, repo_id=a.repo, commit_message="mini-jev-multimodal",
                       delete_patterns=stale or None)
-    print(f"uploaded to https://huggingface.co/{a.repo}" + (f" (removed {len(stale)} v1 files from main)" if stale else ""))
+    print(f"uploaded to https://huggingface.co/{a.repo}" + (f" (removed {len(stale)} stale files from main)" if stale else ""))
 
 
 if __name__ == "__main__":
