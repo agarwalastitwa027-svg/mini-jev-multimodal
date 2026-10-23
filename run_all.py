@@ -40,6 +40,18 @@ VARIANTS = {  # name: extra train.py arguments
 }
 
 
+def prefix(a):
+    return "broad" if a.mix == "broad" else "full"
+
+
+def mix_files(a):
+    """(train, val) for the selected mix. The broad mix prefers the decontaminated train file when it exists."""
+    if a.mix == "broad":
+        clean = "data/broad/train_clean.jsonl"
+        return (clean if os.path.exists(clean) else "data/broad/train.jsonl"), "data/broad/val.jsonl"
+    return "data/mix/train.jsonl", "data/mix/val.jsonl"
+
+
 class Runner:
     def __init__(self, dry, env=None):
         self.dry, self.env = dry, {**os.environ, **(env or {})}
@@ -71,9 +83,19 @@ def step_data(run, a):
     run([PY, "data/vision_public.py", "--out", f"{src}/vision_public.jsonl", "--per-dataset", str(a.per_dataset)])
     run([PY, "data/vision_public.py", "--bench-only", "--out", "data/mix/bench_scienceqa.jsonl"])
     run([PY, "data/build_mix.py", "--inputs", f"{src}/*.jsonl", "--out", "data/mix"])
+    # held-out test sets that no training mix contains (see docs/REPORT.md)
+    run([PY, "data/make_fresh_tests.py", "data/mix/test_fresh.jsonl"])
+    run([PY, "data/make_more_tests.py", "data/mix/test_more.jsonl"])
+    run([PY, "data/make_manyopt_tests.py", "data/mix/test_manyopt.jsonl"])
+    run([PY, "data/make_confirm_tests.py", "data/mix/test_confirm.jsonl"])
+    if a.mix == "broad":  # the released recipe: 11 more sources, whole task families held out
+        run([PY, "data/broad_public.py", "--out", "data/broad/src/broad_public.jsonl", "--per-dataset", "1000"])
+        run([PY, "data/build_mix.py", "--inputs", f"{src}/*.jsonl", "data/broad/src/*.jsonl", "--out", "data/broad"])
     suite = os.path.join(a.di_kit, "suite-0.3") if a.di_kit else None
     if suite and (os.path.isdir(suite) or a.dry_run):
-        cmd = [PY, "data/decontam.py", "--train", "data/mix/train.jsonl", "--suite-dir", suite, "--out", "data/mix/train.jsonl"]
+        tr = "data/broad/train.jsonl" if a.mix == "broad" else "data/mix/train.jsonl"
+        out_tr = "data/broad/train_clean.jsonl" if a.mix == "broad" else tr
+        cmd = [PY, "data/decontam.py", "--train", tr, "--suite-dir", suite, "--out", out_tr]
         vis = os.path.join(a.di_kit, "work", "vision")
         if os.path.isdir(vis):
             cmd += ["--vision-dir", vis]
@@ -85,7 +107,7 @@ def step_data(run, a):
 
 
 def run_dirs(a):
-    out = [(f"full_seed{s}", "full", s) for s in a.seeds]
+    out = [(f"{prefix(a)}_seed{s}", "full", s) for s in a.seeds]
     for v in ("headonly", "hardlabel", "textonly", "visiononly"):
         out += [(f"{v}_seed{s}", v, s) for s in a.ablation_seeds]
     return out
@@ -97,7 +119,8 @@ def step_train(run, a):
         if os.path.exists(os.path.join(out, "meta.json")) and not a.dry_run:
             print(f"[done] {out}")
             continue
-        run([PY, "train.py", "--model", a.model, "--train", "data/mix/train.jsonl", "--val", "data/mix/val.jsonl",
+        tr, va = mix_files(a)
+        run([PY, "train.py", "--model", a.model, "--train", tr, "--val", va,
              "--out", out, "--seed", str(seed), "--epochs", str(a.epochs)] + VARIANTS[variant] + a.train_extra)
 
 
@@ -111,31 +134,31 @@ def step_calibrate(run, a):
         d = f"runs/{name}"
         if not a.dry_run and (not os.path.exists(os.path.join(d, "meta.json")) or os.path.exists(os.path.join(d, "calibration.json"))):
             continue
-        run([PY, "calibrate.py", "--run", d, "--val", "data/mix/val.jsonl", "--test"] + (tests() or ["data/mix/test_text.jsonl"]))
+        run([PY, "calibrate.py", "--run", d, "--val", mix_files(a)[1], "--test"] + (tests() or ["data/mix/test_text.jsonl"]))
 
 
 def step_ablations(run, a):
     run([PY, "-m", "eval.ablations", "--config", "eval/ablations.json", "--out", "results"])
 
 
-def best_v2(a):
+def best_run(a):
     best, score = None, None
     for s in a.seeds:
-        d = f"runs/full_seed{s}"
+        d = f"runs/{prefix(a)}_seed{s}"
         cal = os.path.join(d, "calibration.json")
         if os.path.exists(cal):
             nll = json.load(open(cal))["val"]["after"]["all"]["nll"]
             if score is None or nll < score:
                 best, score = d, nll
-    return best or f"runs/full_seed{a.seeds[0]}"
+    return best or f"runs/{prefix(a)}_seed{a.seeds[0]}"
 
 
 def step_latency(run, a):
-    run([PY, "-m", "eval.latency", "--run", best_v2(a), "--out", "results/latency.json"])
+    run([PY, "-m", "eval.latency", "--run", best_run(a), "--out", "results/latency.json"])
 
 
 def step_release(run, a):
-    src = best_v2(a)
+    src = best_run(a)
     print(f"\nrelease <- {src}")
     if not a.dry_run:
         if os.path.exists("runs/release"):
@@ -145,6 +168,8 @@ def step_release(run, a):
 
 def step_publish(run, a):
     cmd = [PY, "publish_hf.py", "--run", "runs/release", "--repo", a.hf_repo, "--results", "results"]
+    if a.mix == "broad":
+        cmd += ["--mix-report", "data/broad/mix_report.json"]
     t = os.path.join(a.di_kit or "", "runs", a.di_name, "scores.json")
     v = os.path.join(a.di_kit or "", "runs", f"vision-{a.di_name}", "vision-scores.json")
     if a.di_kit and os.path.exists(t):
@@ -189,6 +214,9 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--steps", nargs="+", choices=STEPS, default=DEFAULT)
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--mix", choices=["broad", "narrow"], default="broad",
+                    help="broad = the released recipe (more sources); narrow = the original 12-source mix used for "
+                         "the ablation study (eval/ablations.json refers to its runs)")
     ap.add_argument("--model", default="Qwen/Qwen3-VL-2B-Instruct")
     ap.add_argument("--seeds", nargs="+", type=int, default=[0, 1, 2], help="seeds for the main runs")
     ap.add_argument("--ablation-seeds", nargs="+", type=int, default=[0], help="seeds for ablations B/C/E")

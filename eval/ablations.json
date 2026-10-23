@@ -12,7 +12,7 @@
      "paths": ["runs/headonly_seed0", "runs/headonly_seed1", "runs/headonly_seed2"]},
     {"name": "C. Hard-label recipe (hard CE)", "kind": "minijev",
      "paths": ["runs/hardlabel_seed0", "runs/hardlabel_seed1", "runs/hardlabel_seed2"]},
-    {"name": "D. This model (soft + ordinal loss, text+vision)", "kind": "minijev",
+    {"name": "D. Full recipe, original 12-source mix (3 seeds)", "kind": "minijev",
      "paths": ["runs/full_seed0", "runs/full_seed1", "runs/full_seed2"]},
     {"name": "E1. Trained on text only", "kind": "minijev",
      "paths": ["runs/textonly_seed0", "runs/textonly_seed1", "runs/textonly_seed2"]},

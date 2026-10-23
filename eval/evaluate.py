@@ -105,17 +105,35 @@ def main():
     ap.add_argument("--max-pixels", type=int, default=None)
     ap.add_argument("--image-root", default=".")
     ap.add_argument("--out", default=None, help="write records + metrics JSON here")
+    ap.add_argument("--n-perm", type=int, default=1, help="minijev: average choice questions over this many option orders")
+    ap.add_argument("--fit-temps", nargs="+", default=None,
+                    help="validation file(s): fit one temperature per question type on them (post-hoc scaling) and apply it")
+    ap.add_argument("--val-limit", type=int, default=1500)
+    ap.add_argument("--min-per-type", type=int, default=50)
     a = ap.parse_args()
     from eval.predictors import make_predictor
     spec = {"kind": a.kind, "path": a.path, "model": a.model, "image_root": a.image_root}
     if a.max_pixels and a.kind != "ollama":
         spec["max_pixels"] = a.max_pixels
+    if a.n_perm > 1:
+        spec["n_perm"] = a.n_perm
     pred = make_predictor(spec)
-    result = {"predictor": pred.name, "files": {}}
+    temps = None
+    if a.fit_temps:
+        from calibrate import fit_temperature
+        from jev.schema import TYPES
+        vrecs = collect(pred, read_jsonl(a.fit_temps, a.val_limit))
+        pooled = fit_temperature([(r["probs"], r["gold"]) for r in vrecs])
+        temps = {}
+        for t in TYPES:
+            pairs = [(r["probs"], r["gold"]) for r in vrecs if r["type"] == t and r["probs"] is not None]
+            temps[t] = fit_temperature(pairs) if len(pairs) >= a.min_per_type else pooled
+        print("fitted temperatures:", {k: round(v, 3) for k, v in temps.items()}, "| pooled", round(pooled, 3))
+    result = {"predictor": pred.name + (" + temperature scaling" if temps else ""), "temps": temps, "files": {}}
     for f in a.test:
         rows = read_jsonl(f, a.limit)
         recs = collect(pred, rows)
-        rep = report(recs)
+        rep = report(recs, temps)
         result["files"][os.path.basename(f)] = {"metrics": rep, "records": recs}
         al = rep["all"]
         print(f"{os.path.basename(f)}: acc {al['accuracy']:.4f} skill {al['skill']:.4f} ece {al['ece']:.4f} "

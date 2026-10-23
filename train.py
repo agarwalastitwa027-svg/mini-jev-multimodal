@@ -9,6 +9,7 @@ Ablations (same data, see docs/METHODOLOGY.md):
     --loss hard                hard-label recipe: hard cross-entropy only    (C)
     --modalities text          text-only training                    (E)
     --modalities vision        vision-only training                  (E)
+    --head-type letters        LM-head letter readout instead of the answer head   (F)
 
 CPU smoke test (seconds):
     python tests/tiny_model.py runs/tiny-base
@@ -27,7 +28,7 @@ import torch
 from transformers import get_cosine_schedule_with_warmup
 
 from jev.data import balanced_order, flatten, read_jsonl, shuffled_order
-from jev.encode import collate_full, encode_prefix, encode_suffix, load_tokenizer, load_vision
+from jev.encode import collate_full, encode_prefix, encode_suffix, letter_token_ids, load_tokenizer, load_vision
 from jev.losses import decision_loss
 from jev.model import MiniJev, pick_dtype
 
@@ -49,12 +50,12 @@ class PrefixCache:
         return p
 
 
-def encode_batch(exs, rows, cache, tok, rng=None):
+def encode_batch(exs, rows, cache, tok, rng=None, style="options"):
     items, targets, types = [], [], []
     for e in exs:
         q = rows[e.row]["questions"][e.key]
         order = shuffled_order(q, rng) if rng is not None else None
-        suf = encode_suffix(tok, e.key, q, order)
+        suf = encode_suffix(tok, e.key, q, order, style)
         items.append((cache.get(e.row, rows[e.row]), suf))
         targets.append([e.target[j] for j in order] if order is not None else e.target)
         types.append(e.qtype)
@@ -63,11 +64,12 @@ def encode_batch(exs, rows, cache, tok, rng=None):
 
 @torch.no_grad()
 def evaluate(model, rows, exs, cache, tok, a, device, dtype):
+    style = a.head_type
     model.eval()
     stats = defaultdict(lambda: [0, 0.0, 0])  # modality -> correct, nll, n
     for i in range(0, len(exs), a.eval_bs):
         part = exs[i:i + a.eval_bs]
-        b, targets, types = encode_batch(part, rows, cache, tok)
+        b, targets, types = encode_batch(part, rows, cache, tok, None, style)
         with torch.autocast(device.type, dtype=dtype, enabled=device.type == "cuda"):
             logits = model.forward_full(b, device, types, calibrated=False)
         for e, lg, t in zip(part, logits, targets):
@@ -98,6 +100,8 @@ def main():
     ap.add_argument("--head-lr", type=float, default=1e-3)
     ap.add_argument("--lora-r", type=int, default=16, help="0 = freeze the backbone, train the head only")
     ap.add_argument("--head-dim", type=int, default=256)
+    ap.add_argument("--head-type", choices=["options", "letters"], default="options",
+                    help="options: learned answer head over option text; letters: LM-head letter readout (baseline)")
     ap.add_argument("--loss", choices=["soft", "hard"], default="soft")
     ap.add_argument("--rps-weight", type=float, default=1.0)
     ap.add_argument("--brier-weight", type=float, default=0.0)
@@ -144,7 +148,7 @@ def main():
     keep = []
     for e in exs:
         r = rows[e.row]
-        n = len(cache.get(e.row, r).ids) + len(encode_suffix(tok, e.key, r["questions"][e.key]).ids)
+        n = len(cache.get(e.row, r).ids) + len(encode_suffix(tok, e.key, r["questions"][e.key], None, a.head_type).ids)
         if n <= a.max_train_tokens:
             keep.append(e)
     print(f"train questions={len(keep)} (skipped {len(exs) - len(keep)} longer than {a.max_train_tokens} tokens) "
@@ -156,7 +160,9 @@ def main():
     exs = keep
 
     model = MiniJev.create(a.model, lora_r=a.lora_r, head_dim=a.head_dim, grad_ckpt=not a.no_grad_ckpt,
-                           load_4bit=a.load_4bit, dtype=dtype if device.type == "cuda" else torch.float32)
+                           load_4bit=a.load_4bit, dtype=dtype if device.type == "cuda" else torch.float32,
+                           head_type=a.head_type,
+                           letter_ids=letter_token_ids(tok) if a.head_type == "letters" else None)
     model.meta.update({"name": a.name, "max_pixels": a.max_pixels, "modalities": a.modalities or ["text", "vision"],
                        "train_args": vars(a)})
     if a.load_4bit:
@@ -168,7 +174,8 @@ def main():
 
     head_params = list(model.head.parameters())
     body = [p for n, p in model.named_parameters() if p.requires_grad and not n.startswith("head.")]
-    groups = [{"params": head_params, "lr": a.head_lr}] + ([{"params": body, "lr": a.lr}] if body else [])
+    groups = ([{"params": head_params, "lr": a.head_lr}] if head_params else []) + \
+        ([{"params": body, "lr": a.lr}] if body else [])
     opt = torch.optim.AdamW(groups, weight_decay=0.01)
     steps_per_epoch = math.ceil(len(exs) / (a.bs * a.grad_accum))
     total = a.max_steps or max(1, int(steps_per_epoch * a.epochs))
@@ -185,7 +192,7 @@ def main():
         if len(order) < a.bs:
             order += balanced_order(exs, text_frac, rng)
         idx, order = order[:a.bs], order[a.bs:]
-        b, targets, types = encode_batch([exs[i] for i in idx], rows, cache, tok, rng)
+        b, targets, types = encode_batch([exs[i] for i in idx], rows, cache, tok, rng, a.head_type)
         with torch.autocast(device.type, dtype=dtype, enabled=device.type == "cuda"):
             logits = model.forward_full(b, device, types, calibrated=False)
         loss = decision_loss(logits, targets, types, a.loss, a.rps_weight, a.brier_weight, a.label_smoothing)

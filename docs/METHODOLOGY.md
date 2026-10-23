@@ -105,3 +105,22 @@ Clef-flash, JevK5 and Tiny-Jev on the Jev Decision Index.
   size, or gain from shared skills; the table measures it rather than assuming.
 - **Leaderboard:** a 2B model will trail 9B–31B decision models on Knowledge & Reasoning; it can be
   competitive on Retrieval & Classification and Tools, and its latency is far lower.
+
+## 6. The released recipe and the study around it
+
+The released model differs from the comparisons above in one respect: it is trained on the **broad mix**
+(`data/broad_public.py`, 12 more public sources, 26,413 training rows) instead of the original 12-source mix. Sections
+1-5 describe the model and the narrow-mix ablations; [REPORT.md](REPORT.md) describes the later study that led to the
+broad mix. In short:
+
+| Item | What was done |
+|---|---|
+| Strong baselines | base model with post-hoc temperature scaling (`eval.evaluate --fit-temps`); a letter-readout head in the same framework (`train.py --head-type letters`) |
+| Held-out families | paraphrase, hate / offensive / irony tweets, financial sentiment, digit / clothing / leaf-disease images are in no training mix (guarded in `data/broad_public.py`) |
+| Test collections | `test_more` (16 datasets), `test_fresh`, `test_zeroshot`, `test_manyopt` (27-100 options), `test_confirm` (13 datasets built after the comparison) |
+| Statistics | paired, dataset-stratified bootstrap (`eval/compare.py`), 3 seeds per recipe with a paired group bootstrap (`eval/compare_groups.py`) |
+| Release rule | the seed with the lowest validation log-loss (`run_all.py --steps release`) |
+| Inference options | `Decider.decide(..., n_perm=N)` averages `choice` questions over N option orders; `eval/ensemble.py` averages seeds |
+
+The decisions that were tested and **not** adopted: option-count augmentation (`data/augment_options.py`, no gain) and
+the letter-readout head (as accurate, but worse calibrated and limited to 26 options).

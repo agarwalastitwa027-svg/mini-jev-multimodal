@@ -22,8 +22,10 @@ How a request runs
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import os
+import random
 import time
 from typing import Dict, Optional, Sequence
 
@@ -31,7 +33,7 @@ import torch
 
 from jev.encode import Vision, encode_prefix, encode_suffix, load_tokenizer, load_vision, collate_full
 from jev.model import MiniJev, pick_dtype
-from jev.schema import Unsupported, answer_from_probs, validate_questions
+from jev.schema import Unsupported, answer_from_probs, options_of, validate_questions
 
 DEFAULT_MAX_TOKENS = 16384
 
@@ -63,6 +65,7 @@ class Decider:
         self.cache_prefix = cache_prefix
         self.max_pixels = max_pixels
         self.name = name
+        self.style = "letters" if model.meta.get("head_type") == "letters" else "options"
         self.last_stats: Dict = {}
 
     @classmethod
@@ -85,11 +88,20 @@ class Decider:
 
     # ------------------------------------------------------------------ public API
     @torch.no_grad()
-    def decide(self, state, questions: Dict, images: Sequence = (), max_pixels: Optional[int] = None) -> Dict:
+    def decide(self, state, questions: Dict, images: Sequence = (), max_pixels: Optional[int] = None,
+               n_perm: int = 1, perm_seed: int = 0) -> Dict:
+        """Answer typed questions about a state.
+
+        n_perm > 1 averages each `choice` question over that many option orders (identity, reversed, then
+        seeded shuffles), which removes most position bias for the cost of extra suffix passes. The state is
+        still encoded once; noul and score questions are never permuted (their order carries meaning).
+        """
         validate_questions(questions)
+        if n_perm > 1:
+            return self._decide_permuted(state, questions, images, max_pixels, n_perm, perm_seed)
         t0 = time.perf_counter()
         prefix = encode_prefix(self.tok, state, images, self.vision, max_pixels or self.max_pixels)
-        suffixes = [encode_suffix(self.tok, k, q) for k, q in questions.items()]
+        suffixes = [encode_suffix(self.tok, k, q, style=self.style) for k, q in questions.items()]
         P = len(prefix.ids)
         longest = max(len(s.ids) for s in suffixes)
         if P + longest > self.max_tokens:
@@ -108,6 +120,40 @@ class Decider:
                            "image_pixels": prefix.image_pixels,
                            "wall_ms": (time.perf_counter() - t0) * 1000}
         return {"model": self.name, "answers": answers, "usage": {"input_tokens": self.last_stats["input_tokens"]}}
+
+    def _decide_permuted(self, state, questions, images, max_pixels, n_perm, perm_seed):
+        expanded, plan = {}, {}
+        for k, q in questions.items():
+            keys, descs = options_of(q)
+            if q["type"] != "choice":
+                expanded[k], plan[k] = q, [(k, None)]
+                continue
+            n = len(keys)
+            rng = random.Random(int(hashlib.sha256(f"{perm_seed}|{k}".encode()).hexdigest()[:12], 16))
+            orders = [list(range(n)), list(range(n))[::-1]]
+            while len(orders) < n_perm:
+                o = list(range(n))
+                rng.shuffle(o)
+                orders.append(o)
+            plan[k] = []
+            for j, o in enumerate(orders[:n_perm]):
+                name = f"{k}\x00p{j}"
+                expanded[name] = {**q, "criteria": {keys[i]: descs[i] for i in o}}
+                plan[k].append((name, o))
+        out = self.decide(state, expanded, images, max_pixels, n_perm=1)
+        answers = {}
+        for k, q in questions.items():
+            keys, _ = options_of(q)
+            if plan[k][0][1] is None:
+                answers[k] = out["answers"][k]
+                continue
+            acc = {key: 0.0 for key in keys}
+            for name, _o in plan[k]:
+                for key, p in out["answers"][name]["probabilities"].items():
+                    acc[key] += p / len(plan[k])
+            answers[k] = answer_from_probs(q, [acc[key] for key in keys])
+        out["answers"] = answers
+        return out
 
     # ------------------------------------------------------------------ internals
     def _autocast(self):

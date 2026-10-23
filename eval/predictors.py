@@ -25,13 +25,14 @@ LETTERS = [chr(65 + i) for i in range(26)]
 
 
 class MiniJevPredictor:
-    def __init__(self, run: str, device=None, max_pixels=None, image_root=".", **kw):
+    def __init__(self, run: str, device=None, max_pixels=None, image_root=".", n_perm: int = 1, **kw):
         from jev.decide import Decider
+        self.n_perm = n_perm
         self.d = Decider.from_pretrained(run, device=device, image_root=image_root, max_pixels=max_pixels, **kw)
-        self.name = run
+        self.name = run + (f" (n_perm={n_perm})" if n_perm > 1 else "")
 
     def answer(self, row: Dict) -> Dict[str, List[float]]:
-        out = self.d.decide(row.get("state", ""), row["questions"], row.get("images") or [])
+        out = self.d.decide(row.get("state", ""), row["questions"], row.get("images") or [], n_perm=self.n_perm)
         return {k: predicted_probs(row["questions"][k], a) for k, a in out["answers"].items()}
 
     def sync(self):

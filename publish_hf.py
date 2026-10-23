@@ -93,39 +93,22 @@ def first_table(path):
 
 
 def comparison_section(results_dir):
-    """Base model vs mini-Jev, shown right under the introduction."""
-    more = first_table(os.path.join(results_dir, "more_datasets.md")) if results_dir else []
-    fresh = first_table(os.path.join(results_dir, "base_vs_finetuned.md")) if results_dir else []
-    if not more:
+    """The README's headline section (base model vs mini-Jev), so the card and the README cannot drift apart."""
+    readme = read(os.path.join(os.path.dirname(os.path.abspath(__file__)), "README.md"), "") or ""
+    start = readme.find("## Base model vs mini-Jev")
+    end = readme.find("## What it can and cannot do")
+    if start < 0 or end < 0:
         return []
-    out = ["## Base model vs mini-Jev", "",
-           "The **base model** is `Qwen/Qwen3-VL-2B-Instruct` with no fine-tuning, scored zero-shot by reading the "
-           "probabilities of the option letters. mini-Jev is that same model after LoRA fine-tuning plus the answer "
-           "head and per-type calibration. Both were tested on the **same questions from 16 open datasets that "
-           "appear nowhere in training** (3,678 questions: 11 text datasets, 5 image datasets). The hard-label column "
-           "is the same recipe trained with plain cross-entropy instead of soft targets. Accuracy in %; ECE (calibration "
-           "error) and NLL (log-loss) are lower-is-better.", ""] + more + [
-           "",
-           "- **Accuracy:** overall 76.8% against 71.1% for the base model (text 77.0 vs 68.9). mini-Jev wins on 9 of 16 "
-           "datasets, with the largest gains where the base model's letter readout is weak: offensive tweets (+34 points), "
-           "financial news sentiment (+30), SNLI (+19), RTE (+13). It is slightly worse on 20-way newsgroups, "
-           "Fashion-MNIST and bean-leaf images, and level on SciQ, IMDB and MNIST.",
-           "- **Calibration:** the clearest gain. Overall ECE falls from 0.240 to 0.037 and NLL from 2.04 to 0.59, so the "
-           "probabilities can be trusted as confidences.",
-           "- **Soft vs hard targets:** the two training recipes are tied (76.8 vs 76.5), so the benefit comes from "
-           "fine-tuning and the calibrated head, not from the soft-target loss.",
-           "- Single seed and 128-250 questions per dataset: differences of a few points are within noise.", ""]
-    if fresh:
-        out += ["Earlier held-out check (two new datasets plus the three sources withheld from training):", ""] + fresh + [""]
-    out += ["More: full ablation table, per-source results and latency further down; "
-            "`results/more_datasets.md`, `results/base_vs_finetuned.md` in the repo.", ""]
-    return out
+    text = readme[start:end].rstrip() + "\n"
+    for rel in ("docs/", "results/"):  # relative links do not work on the Hub
+        text = text.replace(f"]({rel}", f"]({GITHUB}/blob/main/{rel}")
+    return text.splitlines() + [""]
 
 
 def model_card(meta, mix, results_dir, cal, di_text, di_vision, repo, lora, decontam=None):
     base = meta.get("base_model", "Qwen/Qwen3-VL-2B-Instruct")
     ta = meta.get("train_args", {})
-    sources = sorted({s.split(" (")[0] for s in (mix or {}).get("by_source", {})})
+    sources = sorted({s.split(" (")[0] for s, c in (mix or {}).get("by_source", {}).items() if c.get("train")})
     abl = read(os.path.join(results_dir, "ablations.md"), "") if results_dir else ""
     lat = read(os.path.join(results_dir, "latency.md"), "") if results_dir else ""
     lines = ["---", "license: apache-2.0", f"base_model: {base}"]
@@ -215,13 +198,14 @@ def model_card(meta, mix, results_dir, cal, di_text, di_vision, repo, lora, deco
                 v = d.get("index")
                 lines.append(f"| {name} | {v:.2f} | {d.get('edition') or '–'} | {d.get('complete')} |" if isinstance(v, (int, float))
                              else f"| {name} | – | {d.get('edition') or '–'} | {d.get('complete')} |")
-        lines += ["", "**Unofficial.** These scores come from a locally rebuilt copy of the suite whose core rows are not "
-                  "byte-identical to the leaderboard's, with ToolRet-retrieval and BRIGHT-retrieval not run (an 8 GB GPU "
-                  "cannot finish them; they count as wrong). Not a leaderboard entry. Details: "
-                  "`results/decision_index_text_unofficial.md` in the GitHub repo.", ""]
+        lines += ["", "**Unofficial, and for an earlier version.** These scores were produced by an earlier model trained on "
+                  "the original 12-source mix, not the released one (which was not re-run). They come from a locally "
+                  "rebuilt copy of the suite whose core rows are not byte-identical to the leaderboard's, with "
+                  "ToolRet-retrieval and BRIGHT-retrieval not run (an 8 GB GPU cannot finish them; they count as wrong). "
+                  "Not a leaderboard entry. Details: `results/decision_index_text_unofficial.md` in the GitHub repo.", ""]
     lines += calibration_table(cal)
     if abl:
-        lines += [abl.replace("# Ablations", "### Comparisons (own test sets)"), ""]
+        lines += [abl.replace("# Ablations", "### Ablations (original 12-source mix; this model's recipe is trained on a broader mix)"), ""]
     if lat:
         lines += [lat.replace("# Latency", "### Latency"), ""]
     lines += ["## Limitations", "",

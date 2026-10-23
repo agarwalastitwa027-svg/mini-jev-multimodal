@@ -7172,7 +7172,7 @@
   },
   "_seeds": 1
  },
- "D. This model (soft + ordinal loss, text+vision)": {
+ "D. Full recipe, original 12-source mix (3 seeds)": {
   "test_text": {
    "all": {
     "n": [

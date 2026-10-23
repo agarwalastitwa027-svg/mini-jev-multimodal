@@ -153,7 +153,27 @@ def encode_prefix(tok, state, images: Sequence = (), vision: Optional[Vision] = 
     return Prefix(ids, pv, thw, vision.pad_id if (images and vision) else None, pixels)
 
 
-def render_suffix(instructions, keys: List[str], descs: List[str]):
+LETTERS = [chr(65 + i) for i in range(26)]
+STYLES = ("options", "letters")
+
+
+def letter_token_ids(tok) -> List[int]:
+    """Token id of ' A' .. ' Z' (the token that follows 'Answer:'); used by the letter-readout head."""
+    ids = [tok(" " + L, add_special_tokens=False)["input_ids"][-1] for L in LETTERS]
+    if len(set(ids)) != len(ids):
+        raise ValueError("tokenizer does not give distinct tokens for the letters A-Z")
+    return ids
+
+
+def render_suffix(instructions, keys: List[str], descs: List[str], style: str = "options"):
+    if style == "letters":  # options are lettered; the answer is the letter's next-token logit
+        lines = []
+        for i, (k, d) in enumerate(zip(keys, descs)):
+            k, d = str(k).strip(), str(d).strip()
+            lines.append(f"{LETTERS[i]}. " + (k if (not d or d == k) else f"{k}: {d}"))
+        text = (f"Question: {as_text(instructions).strip()}\nOptions:\n" + "\n".join(lines) +
+                "\nAnswer with the letter of the correct option.\nAnswer:")
+        return text, [(0, 0)] * len(keys)
     head = f"Question: {as_text(instructions).strip()}\nOptions:\n"
     parts, spans, pos = [head], [], len(head)
     for k, d in zip(keys, descs):
@@ -167,12 +187,16 @@ def render_suffix(instructions, keys: List[str], descs: List[str]):
     return "".join(parts), spans
 
 
-def encode_suffix(tok, key: str, q: Dict, order: Optional[List[int]] = None) -> Suffix:
+def encode_suffix(tok, key: str, q: Dict, order: Optional[List[int]] = None, style: str = "options") -> Suffix:
     keys, descs = options_of(q)
     if order is not None:  # option shuffling during training
         keys, descs = [keys[i] for i in order], [descs[i] for i in order]
-    text, char_spans = render_suffix(q.get("instructions", ""), keys, descs)
+    if style == "letters" and len(keys) > len(LETTERS):
+        raise Unsupported(f"the letter-readout head supports at most {len(LETTERS)} options, got {len(keys)}")
+    text, char_spans = render_suffix(q.get("instructions", ""), keys, descs, style)
     enc = tok(text, return_offsets_mapping=True, add_special_tokens=False)
+    if style == "letters":
+        return Suffix(key, q["type"], keys, enc["input_ids"], char_spans)
     offs = enc["offset_mapping"]
     spans = []
     for cs, ce in char_spans:

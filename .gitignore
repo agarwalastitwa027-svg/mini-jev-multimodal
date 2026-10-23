@@ -18,3 +18,8 @@ results/raw/
 results/latency_probe.png
 *.egg-info/
 .pytest_cache/
+
+results/exp/
+results/_superseded/
+data/broad/
+data/broad_aug/

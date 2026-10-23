@@ -49,6 +49,36 @@ class AnswerHead(nn.Module):
         return out
 
 
+class LetterHead(nn.Module):
+    """Baseline head: read the next-token logits of the option letters from the LM head.
+
+    The backbone's LM head is tied to its input embeddings, so the logit of letter j is
+    <h[last token], E[' A'+j]>. No new weights are learned; only the LoRA changes. This is the
+    standard "letter readout" used for zero-shot multiple choice, here trained with the same data,
+    prompts, cache and per-type temperatures as the answer head, to isolate the head design.
+    """
+
+    def __init__(self, letter_embeds: torch.Tensor):
+        super().__init__()
+        self.register_buffer("E", letter_embeds.float().clone(), persistent=False)
+        self.register_buffer("temperature", torch.ones(len(TYPES)))
+
+    def forward(self, hs: torch.Tensor, last_idx, spans, types: Optional[List[str]] = None,
+                calibrated: bool = True) -> List[torch.Tensor]:
+        out = []
+        for b in range(hs.size(0)):
+            lg = self.E[:len(spans[b])] @ hs[b, int(last_idx[b])].float()
+            if calibrated and types is not None:
+                lg = lg / self.temperature[TYPE_INDEX[types[b]]]
+            out.append(lg)
+        return out
+
+
+def letter_embeddings(backbone, letter_ids) -> torch.Tensor:
+    with torch.no_grad():
+        return backbone.get_input_embeddings().weight[torch.tensor(letter_ids)].detach().float().cpu()
+
+
 def pick_dtype():
     if torch.cuda.is_available():
         return torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
@@ -72,7 +102,7 @@ LORA_TARGETS = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", 
 
 
 class MiniJev(nn.Module):
-    def __init__(self, backbone, head: AnswerHead, meta: Dict):
+    def __init__(self, backbone, head: nn.Module, meta: Dict):
         super().__init__()
         self.backbone = backbone
         self.head = head
@@ -81,7 +111,8 @@ class MiniJev(nn.Module):
     # ------------------------------------------------------------------ construction
     @classmethod
     def create(cls, model_name: str, lora_r: int = 16, head_dim: int = 256, grad_ckpt: bool = True,
-               load_4bit: bool = False, attn: str = "sdpa", dtype=None):
+               load_4bit: bool = False, attn: str = "sdpa", dtype=None, head_type: str = "options",
+               letter_ids=None):
         from transformers import AutoModel
         dtype = dtype or pick_dtype()
         kw = {"dtype": dtype, "attn_implementation": attn}
@@ -102,9 +133,14 @@ class MiniJev(nn.Module):
         else:
             for p in backbone.parameters():
                 p.requires_grad_(False)
-        head = AnswerHead(hidden_size(backbone.config), head_dim)
+        if head_type == "letters":
+            if letter_ids is None:
+                raise ValueError("head_type='letters' needs letter_ids (see jev.encode.letter_token_ids)")
+            head = LetterHead(letter_embeddings(backbone, letter_ids))
+        else:
+            head = AnswerHead(hidden_size(backbone.config), head_dim)
         meta = {"base_model": model_name, "lora_r": lora_r, "head_dim": head_dim,
-                "load_4bit": load_4bit, "render_version": RENDER_VERSION}
+                "load_4bit": load_4bit, "render_version": RENDER_VERSION, "head_type": head_type}
         model = cls(backbone, head, meta)
         for p in model.parameters():  # trainable params in fp32 (stable under bf16/fp16 autocast)
             if p.requires_grad:
@@ -130,7 +166,11 @@ class MiniJev(nn.Module):
                 backbone = PeftModel.from_pretrained(backbone, os.path.join(run_dir, "lora"))
                 if merge:
                     backbone = backbone.merge_and_unload()
-        head = AnswerHead(hidden_size(backbone.config), meta["head_dim"])
+        if meta.get("head_type", "options") == "letters":
+            from jev.encode import letter_token_ids, load_tokenizer
+            head = LetterHead(letter_embeddings(backbone, letter_token_ids(load_tokenizer(run_dir))))
+        else:
+            head = AnswerHead(hidden_size(backbone.config), meta["head_dim"])
         cal = os.path.join(run_dir, "head_calibrated.pt")
         state = torch.load(cal if os.path.exists(cal) else os.path.join(run_dir, "head.pt"), map_location="cpu")
         if state.get("temperature") is not None and state["temperature"].numel() == 1:  # legacy single-temperature head

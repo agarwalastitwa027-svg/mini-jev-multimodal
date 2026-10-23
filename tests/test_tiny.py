@@ -162,3 +162,52 @@ def test_converters_and_metrics(tmp_path):
     assert is_di_family("BANKING77") and is_di_family("mmlu_pro") and not is_di_family("ag_news")
     m = summarize([([0.9, 0.1], 0), ([0.2, 0.8], 1), (None, 0)])
     assert m["accuracy"] == pytest.approx(2 / 3) and m["unanswered"] == 1
+
+
+def letters_decider(base, **kw):
+    from jev.encode import letter_token_ids
+    torch.manual_seed(0)
+    tok = load_tokenizer(base)
+    m = MiniJev.create(base, lora_r=4, grad_ckpt=False, dtype=torch.float32, head_type="letters",
+                       letter_ids=letter_token_ids(tok)).eval()
+    return Decider(m, tok, load_vision(base, 64 * 32 * 32), torch.device("cpu"), torch.float32, **kw)
+
+
+def test_letter_head_cached_equals_full(tiny):
+    base, _ = tiny
+    cached = letters_decider(base, cache_prefix=True, token_budget=10**6)
+    full = letters_decider(base, cache_prefix=False)
+    assert cached.style == "letters"
+    ref = flat(full.decide("My package arrived damaged.", QS))
+    assert np.abs(flat(cached.decide("My package arrived damaged.", QS)) - ref).max() < 1e-5
+    many = {"q": {"type": "choice", "instructions": "?", "criteria": {str(i): "" for i in range(27)}}}
+    with pytest.raises(Unsupported, match="at most 26 options"):
+        cached.decide("x", many)
+
+
+def test_letter_head_trains_and_loads(tiny, tmp_path):
+    base, data = tiny
+    out = str(tmp_path / "letters")
+    subprocess.run([sys.executable, "train.py", "--model", base, "--train", data, "--val", data, "--out", out,
+                    "--max-steps", "6", "--bs", "4", "--grad-accum", "1", "--no-grad-ckpt", "--eval-every", "3",
+                    "--lora-r", "4", "--head-type", "letters"], cwd=ROOT, check=True, capture_output=True)
+    d = Decider.from_pretrained(out, device="cpu")
+    assert d.style == "letters"
+    out = d.decide("My package arrived damaged.", QS)
+    assert abs(sum(out["answers"]["queue"]["probabilities"].values()) - 1) < 1e-4
+
+
+def test_permutation_averaging(tiny):
+    base, _ = tiny
+    d = decider(base, cache_prefix=True)
+    plain = d.decide("My package arrived damaged.", QS)
+    perm = d.decide("My package arrived damaged.", QS, n_perm=2)
+    # noul and score questions are never permuted
+    assert perm["answers"]["urgent"]["noul"] == pytest.approx(plain["answers"]["urgent"]["noul"], abs=1e-5)
+    assert perm["answers"]["stars"]["probabilities"] == pytest.approx(plain["answers"]["stars"]["probabilities"], abs=1e-5)
+    # a choice question becomes the mean of the identity and the reversed order
+    rev_q = {"queue": {**QS["queue"], "criteria": dict(reversed(list(QS["queue"]["criteria"].items())))}}
+    rev = d.decide("My package arrived damaged.", rev_q)["answers"]["queue"]["probabilities"]
+    exp = {k: (plain["answers"]["queue"]["probabilities"][k] + rev[k]) / 2 for k in rev}
+    assert perm["answers"]["queue"]["probabilities"] == pytest.approx(exp, abs=1e-5)
+    assert abs(sum(perm["answers"]["queue"]["probabilities"].values()) - 1) < 1e-5
