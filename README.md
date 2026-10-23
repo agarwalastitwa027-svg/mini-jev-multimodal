@@ -8,6 +8,7 @@ An independent, open reproduction of the idea behind System One decision models 
 It is **not affiliated with or derived from** that product.
 
 - **Model:** <https://huggingface.co/AstitwaAgarwal/multimodal-jev> (LoRA adapters + answer head, Apache-2.0)
+- **Paper:** [paper/mini_jev_paper.docx](paper/mini_jev_paper.docx) ([PDF](paper/mini_jev_paper.pdf)), an empirical study built on the results below
 - **Full report:** [docs/REPORT.md](docs/REPORT.md) (what fine-tuning buys, with baselines, seeds and confidence intervals)
 - **Raw per-question results of every run:** <https://huggingface.co/datasets/AstitwaAgarwal/decision-index-results>
 
