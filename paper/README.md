@@ -34,3 +34,11 @@ run your institution's checker before submitting.
   written from knowledge of the original papers and should be spot-checked.
 - The paper's claims are deliberately conservative (see Section 6); it is an empirical study, not a new method.
 - The authorship, affiliation and the AI-assistance statement should be reviewed and edited by the author.
+
+## Manager copy
+
+[manager_copy/](manager_copy/) holds a version of the paper for readers who only need the research:
+
+- `Fine-Tuning_Small_Decision_Model_Paper.docx` / `.pdf`: the full paper with all links to code, model and data repositories
+  and all code references removed (same results, tables and figures);
+- `Paper_Abstract_and_Summary.docx` / `.pdf`: a two-page abstract and plain-language summary of the paper.
