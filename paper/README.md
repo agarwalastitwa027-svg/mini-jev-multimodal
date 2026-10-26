@@ -41,4 +41,4 @@ run your institution's checker before submitting.
 
 - `Fine-Tuning_Small_Decision_Model_Paper.docx` / `.pdf`: the full paper with all links to code, model and data repositories
   and all code references removed (same results, tables and figures);
-- `Paper_Abstract_and_Summary.docx` / `.pdf`: a two-page abstract and plain-language summary of the paper.
+- `Paper_Abstract_and_Summary.docx` / `.pdf`: a two-page plain-language abstract and summary of the paper (no technical jargon, no publication-fit section).
