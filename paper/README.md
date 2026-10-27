@@ -37,8 +37,6 @@ run your institution's checker before submitting.
 
 ## Manager copy
 
-[manager_copy/](manager_copy/) holds a version of the paper for readers who only need the research:
-
-- `Fine-Tuning_Small_Decision_Model_Paper.docx` / `.pdf`: the full paper with all links to code, model and data repositories
-  and all code references removed (same results, tables and figures);
-- `Paper_Abstract_and_Summary.docx` / `.pdf`: a two-page plain-language abstract and summary of the paper (no technical jargon, no publication-fit section).
+[manager_copy/](manager_copy/) holds `Paper_Abstract_and_Summary.docx` / `.pdf`: a three-page plain-language abstract for readers who only
+need the research (the problems with the untouched model and with letter labels, the answer-picking part, results by number of choices,
+temperature scaling and next steps), with no links or code references.
