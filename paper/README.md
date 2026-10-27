@@ -37,6 +37,6 @@ run your institution's checker before submitting.
 
 ## Manager copy
 
-[manager_copy/](manager_copy/) holds `Paper_Abstract_and_Summary.docx` / `.pdf`: a three-page plain-language abstract for readers who only
-need the research (the problems with the untouched model and with letter labels, the answer-picking part, results by number of choices,
-temperature scaling and next steps), with no links or code references.
+[manager_copy/](manager_copy/) holds `Paper_Abstract_and_Summary.docx` / `.pdf`: a four-page plain-language abstract for readers who only
+need the research (the problems with the untouched model and with letter labels, the answer-picking part, results by number of choices and on unseen datasets,
+temperature scaling with a calibration graph, and next steps), with no links or code references.
