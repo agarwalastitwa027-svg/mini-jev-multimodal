@@ -37,6 +37,10 @@ run your institution's checker before submitting.
 
 ## Manager copy
 
-[manager_copy/](manager_copy/) holds `Paper_Abstract_and_Summary.docx` / `.pdf`: a four-page plain-language abstract for readers who only
-need the research (the problems with the untouched model and with letter labels, the answer-picking part, results by number of choices and on unseen datasets,
-temperature scaling with a calibration graph, and next steps), with no links or code references.
+[manager_copy/](manager_copy/) holds two files for readers who only need the research, with no links to code, model or data repositories
+and no code references:
+
+- `Fine-Tuning_Small_Decision_Model_Paper.docx` / `.pdf`: the full paper (same results, tables and figures), with the number of test
+  datasets stated explicitly (37: 26 text and 11 image);
+- `Paper_Abstract_and_Summary.docx` / `.pdf`: a four-page plain-language abstract (the problems with the untouched model and with letter
+  labels, the answer-picking part, results by number of choices and on unseen datasets, temperature scaling with a calibration graph, and next steps).
